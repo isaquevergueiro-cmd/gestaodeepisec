@@ -359,17 +359,47 @@ select:focus {
   font-weight: 500;
 }
 
+/* ─── Progresso chips ────────────────────────── */
+.progress-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.progress-chip {
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  color: var(--text-2);
+  transition: all 0.2s;
+}
+
+.progress-chip.done {
+  background: var(--green-s);
+  border-color: var(--green-b);
+  color: var(--green);
+}
+
 /* ─── EPI items (Conferência) ────────────────── */
 .epi-item {
   display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 13px 16px;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
   border: 1px solid var(--border);
   border-radius: var(--r);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   background: var(--surface-2);
   transition: border-color 0.15s, background 0.15s;
+}
+
+.epi-item-top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 
 .epi-item--devolvido {
@@ -396,6 +426,73 @@ select:focus {
 .epi-actions {
   display: flex;
   gap: 6px;
+  margin-left: auto;
+}
+
+/* ─── Foto por EPI ───────────────────────────── */
+.epi-foto-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 2px;
+  border-top: 1px solid var(--border);
+}
+
+.epi-foto-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border: 1px dashed var(--border-2);
+  border-radius: var(--r);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+
+.epi-foto-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-s);
+}
+
+.epi-foto-icon {
+  font-size: 18px;
+}
+
+.epi-foto-preview-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.epi-foto-preview {
+  width: 60px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 2px solid var(--green-b);
+}
+
+.epi-foto-retake {
+  padding: 6px 12px;
+  border: 1px solid var(--border-2);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  font-size: 12px;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+
+.epi-foto-retake:hover {
+  border-color: var(--text-2);
+  color: var(--text);
 }
 
 .btn-status {
@@ -643,6 +740,296 @@ select:focus {
   color: var(--text-3);
 }
 
+/* ─── Badge Offline (Nav) ───────────────────── */
+.nav-offline-badge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--orange-b);
+  background: var(--orange-s);
+  color: var(--orange);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  animation: pulse-badge 2s ease-in-out infinite;
+}
+
+@keyframes pulse-badge {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.6; }
+}
+
+/* ─── Button Secondary ───────────────────────── */
+.btn-secondary {
+  background: var(--surface-2);
+  color: var(--text-2);
+  border: 1px solid var(--border-2);
+  padding: 11px 18px;
+  border-radius: var(--r);
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-secondary:hover {
+  color: var(--text);
+  background: var(--surface-3);
+  border-color: var(--text-3);
+}
+
+/* ─── Devolvido Group (Reuso / Descarte) ─────── */
+.devolvido-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-2);
+  border-radius: 10px;
+  padding: 3px 8px 3px 10px;
+}
+
+.devolvido-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-right: 2px;
+  white-space: nowrap;
+}
+
+.btn-status.devolvido_reuso {
+  border-color: var(--green-b);
+  color: var(--green);
+  background: transparent;
+  min-width: unset;
+  padding: 6px 12px;
+}
+
+.btn-status.devolvido_reuso.active {
+  background: var(--green);
+  color: #05150b;
+  border-color: var(--green);
+}
+
+.btn-status.devolvido_descarte {
+  border-color: var(--orange-b);
+  color: var(--orange);
+  background: transparent;
+  min-width: unset;
+  padding: 6px 12px;
+}
+
+.btn-status.devolvido_descarte.active {
+  background: var(--orange);
+  color: white;
+  border-color: var(--orange);
+}
+
+/* Color para item devolvido_reuso / devolvido_descarte */
+.epi-item--devolvido_reuso {
+  border-color: var(--green-b);
+  background: var(--green-s);
+}
+
+.epi-item--devolvido_descarte {
+  border-color: var(--orange-b);
+  background: var(--orange-s);
+}
+
+/* ─── Scanner Container ──────────────────────── */
+.scanner-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 20px;
+  border: 1px dashed var(--border-2);
+  border-radius: var(--r-lg);
+  background: var(--surface-2);
+}
+
+.scanner-container #reader {
+  border-radius: var(--r);
+  overflow: hidden;
+}
+
+/* ─── History List (Últimas Solicitações) ────── */
+.history-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.history-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: var(--r);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.history-item:hover {
+  border-color: var(--border-2);
+  background: var(--surface-3);
+}
+
+.history-item-info strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  display: block;
+}
+
+.history-item-info span {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+/* ─── Dashboard ──────────────────────────────── */
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.dashboard h2 {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 20px;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 20px;
+  text-align: center;
+  transition: border-color 0.15s;
+}
+
+.stat-card.success  { border-color: var(--green-b); background: var(--green-s); }
+.stat-card.warning  { border-color: var(--orange-b); background: var(--orange-s); }
+.stat-card.danger   { border-color: var(--red-b); background: var(--red-s); }
+
+.stat-value {
+  font-size: 36px;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1;
+  margin-bottom: 6px;
+}
+
+.stat-card.success .stat-value { color: var(--green); }
+.stat-card.warning .stat-value { color: var(--orange); }
+.stat-card.danger  .stat-value { color: var(--red); }
+
+.stat-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.9px;
+}
+
+.dashboard-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 22px 24px;
+  margin-bottom: 14px;
+}
+
+.dashboard-section h3 {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 1.1px;
+  margin-bottom: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.dashboard-section p {
+  font-size: 14px;
+  color: var(--text-2);
+}
+
+.dashboard-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.dashboard-table th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-2);
+}
+
+.dashboard-table td {
+  padding: 10px 12px;
+  color: var(--text-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.dashboard-table tr:last-child td { border-bottom: none; }
+.dashboard-table tr:hover td { background: var(--surface-2); }
+
+.tecnico-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tecnico-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: var(--surface-2);
+  border-radius: var(--r);
+  border: 1px solid var(--border);
+}
+
+.tecnico-name { font-size: 14px; font-weight: 500; color: var(--text); }
+.tecnico-count {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--accent-s);
+  padding: 3px 10px;
+  border-radius: 20px;
+}
+
 /* ─── Responsive (tablet portrait) ──────────── */
 @media (max-width: 768px) {
   .nav {
@@ -667,13 +1054,14 @@ select:focus {
     grid-template-columns: 1fr;
   }
 
-  .epi-item {
+  .epi-item-top {
     flex-direction: column;
     align-items: flex-start;
   }
 
   .epi-actions {
     width: 100%;
+    margin-left: 0;
   }
 
   .btn-status {

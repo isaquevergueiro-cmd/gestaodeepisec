@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { CARGO_EPI_MAP, CARGOS, MOTIVOS } from "../catalog";
 import { criarSolicitacao } from "../api";
-import { formatCpf } from "../utils";
+import { formatCpf, validarCpf } from "../utils";
 
 const hoje = new Date().toISOString().slice(0, 10);
 
@@ -30,6 +30,10 @@ export default function Cadastro({ tecnico }) {
 
   async function handleSubmit(e) {
     e.preventDefault();
+    if (!validarCpf(form.cpf)) {
+      setMsg({ type: "error", text: "O CPF informado é inválido. Corrija para continuar." });
+      return;
+    }
     if (!form.cargo || episSelecionados.length === 0) {
       setMsg({ type: "error", text: "Selecione ao menos um EPI." });
       return;
@@ -79,6 +83,7 @@ export default function Cadastro({ tecnico }) {
             <input
               required
               value={form.cpf}
+              maxLength={14}
               onChange={(e) => setForm((f) => ({ ...f, cpf: formatCpf(e.target.value) }))}
               placeholder="000.000.000-00"
               inputMode="numeric"
