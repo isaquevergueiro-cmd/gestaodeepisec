@@ -5,6 +5,7 @@ import solicitacaoRouter from "./routes/solicitacao.js";
 import buscaRouter from "./routes/busca.js";
 import baixaRouter from "./routes/baixa.js";
 import dashboardRouter from "./routes/dashboard.js";
+import historicoRouter from "./routes/historico.js";
 
 const app = express();
 const PORT = process.env.PORT ?? 3001;
@@ -17,6 +18,7 @@ app.use("/api", solicitacaoRouter);
 app.use("/api", buscaRouter);
 app.use("/api", baixaRouter);
 app.use("/api", dashboardRouter);
+app.use("/api", historicoRouter);
 
 app.get("/api/health", (_, res) =>
   res.json({ ok: true, timestamp: new Date().toISOString() })

@@ -4,6 +4,8 @@ const MONDAY_FILE_URL = "https://api.monday.com/v2/file";
 const BOARD_DEVOLUCOES = 18406415397;
 const BOARD_CATALOGO = 18406575530;
 
+import { generateCautelaPdf } from "./pdf.js";
+
 // ─── GraphQL client ───────────────────────────────────────────────────────────
 
 async function gql(query, variables = {}) {
@@ -46,6 +48,7 @@ export async function criarSolicitacao({
     text_mm1ypaa0:      contrato,
     date_mm1ys9b:       { date: data_solicitacao },
     long_text_mm25tz9r: { text: episString },
+    text_mm1yfgtm:      tecnico_responsavel,
   });
 
   const data = await gql(
@@ -120,6 +123,73 @@ export async function buscarPorCpf(cpf) {
   return { id_monday: item.id, nome: item.name, epis_esperados_string: episText };
 }
 
+// ─── Fase 2 — Buscar por Nome ──────────────────────────────────────────────────
+
+export async function buscarPorNome(nome) {
+  // Para buscar por nome com suporte a múltiplas correspondências
+  const data = await gql(
+    `query BuscarNome($boardId: ID!, $nome: String!) {
+      items_page_by_column_values(
+        board_id: $boardId,
+        columns: [{ column_id: "name", column_values: [$nome] }],
+        limit: 10
+      ) {
+        items {
+          id
+          name
+          column_values(ids: ["text_mm1yrhrs", "long_text_mm25tz9r"]) {
+            id
+            text
+          }
+        }
+      }
+    }`,
+    { boardId: String(BOARD_DEVOLUCOES), nome }
+  );
+
+  const items = data.items_page_by_column_values?.items ?? [];
+  if (!items.length) {
+    // Se "name" não for suportado p/ by_column_values, vamos buscar na page direto
+    // Tentativa fallback buscando no board inteiro os primeiros 500
+    console.log(`[Busca] Tentativa fallback para busca de nome: ${nome}`);
+    const fallbackData = await gql(
+      `query BuscarFallback($boardId: ID!) {
+        boards(ids: [$boardId]) {
+          items_page(limit: 500) {
+            items {
+              id
+              name
+              column_values(ids: ["text_mm1yrhrs", "long_text_mm25tz9r"]) {
+                id
+                text
+              }
+            }
+          }
+        }
+      }`,
+      { boardId: String(BOARD_DEVOLUCOES) }
+    );
+    
+    const fallbackItems = fallbackData.boards?.[0]?.items_page?.items ?? [];
+    const matched = fallbackItems.filter(i => i.name.toLowerCase().includes(nome.toLowerCase()));
+    
+    if (!matched.length) throw new Error("Nenhum colaborador encontrado com este nome.");
+    
+    return matched.map(item => {
+      const colCpf = item.column_values.find(c => c.id === "text_mm1yrhrs")?.text ?? "";
+      const colEpis = item.column_values.find(c => c.id === "long_text_mm25tz9r")?.text ?? "";
+      return { id_monday: item.id, nome: item.name, cpf: colCpf, epis_esperados_string: colEpis };
+    });
+  }
+
+  // Se a primeira tentativa funcionou:
+  return items.map(item => {
+    const colCpf = item.column_values.find(c => c.id === "text_mm1yrhrs")?.text ?? "";
+    const colEpis = item.column_values.find(c => c.id === "long_text_mm25tz9r")?.text ?? "";
+    return { id_monday: item.id, nome: item.name, cpf: colCpf, epis_esperados_string: colEpis };
+  });
+}
+
 // ─── Fase 3 helper — Buscar IDs no Catálogo ──────────────────────────────────
 
 async function buscarIdsCatalogo(nomes) {
@@ -191,6 +261,8 @@ async function uploadArquivo(item_id, column_id, buffer, mimeType, filename) {
 
 export async function salvarBaixa({
   id_monday,
+  nome,
+  cpf,
   epis_problema,
   assinatura_base64,
   fotos_epis,
@@ -279,6 +351,24 @@ export async function salvarBaixa({
   await uploadArquivo(id_monday, "file_mm1yms92", sigBuf, sigMime, "assinatura.png");
   console.log("[Baixa] Step 3: assinatura enviada.");
 
+  // ── Step 3.1: Upload da Cautela PDF se houver problema ─────────────────────
+  if (temProblema) {
+    console.log("[Baixa] Step 3.1: gerando e enviando PDF de Cautela...");
+    try {
+      const pdfBuffer = await generateCautelaPdf({
+        nome,
+        cpf,
+        tecnico_responsavel,
+        epis_problema,
+        assinatura_base64
+      });
+      await uploadArquivo(id_monday, "file_mm1z1gbf", pdfBuffer, "application/pdf", "Termo_de_Cautela.pdf");
+      console.log("[Baixa] Step 3.1: Cautela enviada para o board.");
+    } catch (err) {
+      console.error("[Baixa] Erro ao enviar Cautela PDF para o Monday:", err.message);
+    }
+  }
+
   // ── Step 4: Mover item para grupo Histórico (Devolvidos) ──────────────────
   console.log("[Baixa] Step 4: movendo item para grupo histórico...");
   await gql(`
@@ -293,4 +383,50 @@ export async function salvarBaixa({
 
   console.log("[Baixa] Concluído com sucesso.");
   return { ok: true, tecnico: tecnico_responsavel };
+}
+
+// ─── Buscar Histórico (grupo "Devolvidos") ────────────────────────────────────
+
+export async function buscarHistorico() {
+  const data = await gql(`
+    query {
+      boards(ids: [${BOARD_DEVOLUCOES}]) {
+        groups(ids: ["group_mm1y9na5"]) {
+          items_page(limit: 200) {
+            items {
+              id
+              name
+              column_values(ids: [
+                "text_mm1yrhrs",
+                "text_mm1yfgtm",
+                "date_mm1zythe",
+                "text_mm1ypaa0",
+                "color_mm1y6q34",
+                "board_relation_mm258fse"
+              ]) {
+                id
+                text
+                ... on BoardRelationValue { display_value }
+              }
+            }
+          }
+        }
+      }
+    }
+  `);
+
+  const items = data.boards?.[0]?.groups?.[0]?.items_page?.items ?? [];
+
+  return items.map((item) => {
+    const col = (id) => item.column_values.find((c) => c.id === id)?.text ?? "";
+    return {
+      id:       item.id,
+      nome:     item.name,
+      cpf:      col("text_mm1yrhrs"),
+      tecnico:  col("text_mm1yfgtm"),
+      data:     col("date_mm1zythe"),
+      contrato: col("text_mm1ypaa0"),
+      status:   item.column_values.find(c => c.id === "board_relation_mm258fse")?.text ? "Com Pendências" : "Concluída",
+    };
+  });
 }

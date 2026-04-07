@@ -35,8 +35,11 @@ router.get("/dashboard", async (_req, res) => {
               "color_mm1y6q34",
               "color_mm1y93j5",
               "date_mm1zythe",
+              "date_mm1ys9b",
               "text_mm1yfgtm",
-              "board_relation_mm258fse"
+              "board_relation_mm258fse",
+              "text_mm1yrhrs",
+              "long_text_mm25tz9r"
             ]) {
               id
               text
@@ -70,21 +73,13 @@ router.get("/dashboard", async (_req, res) => {
       return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
     }).length;
 
-    // --- Status counts across all items ---
+    // --- Status counts across historical items ---
     let comProblema = 0;
     let semProblema = 0;
     const porTecnico = {};
     const epiFrequency = {};
 
-    for (const item of items) {
-      const statusCol = item.column_values.find(
-        (c) => c.id === "color_mm1y6q34"
-      );
-      const statusLabel = statusCol?.label || statusCol?.text || "";
-
-      if (statusLabel === "Com Pendências") comProblema++;
-      if (statusLabel === "Concluída") semProblema++;
-
+    for (const item of historicoItems) {
       // --- Por técnico ---
       const tecnicoCol = item.column_values.find(
         (c) => c.id === "text_mm1yfgtm"
@@ -94,28 +89,43 @@ router.get("/dashboard", async (_req, res) => {
         porTecnico[tecnico] = (porTecnico[tecnico] || 0) + 1;
       }
 
-      // --- EPIs problemáticos (from board_relation display_value) ---
-      if (statusLabel === "Com Pendências") {
-        const relCol = item.column_values.find(
-          (c) => c.id === "board_relation_mm258fse"
-        );
-        const displayValue = relCol?.display_value || relCol?.text || "";
-        if (displayValue) {
-          const names = displayValue.split(",").map((n) => n.trim()).filter(Boolean);
-          for (const name of names) {
-            epiFrequency[name] = (epiFrequency[name] || 0) + 1;
-          }
+      // --- Verifica se tem problema (EPIs não devolvidos relacionados) ---
+      const relCol = item.column_values.find(
+        (c) => c.id === "board_relation_mm258fse"
+      );
+      const displayValue = relCol?.display_value || relCol?.text || "";
+      
+      if (displayValue && displayValue.trim() !== "") {
+        comProblema++;
+        const names = displayValue.split(",").map((n) => n.trim()).filter(Boolean);
+        for (const name of names) {
+          epiFrequency[name] = (epiFrequency[name] || 0) + 1;
         }
+      } else {
+        semProblema++;
       }
     }
 
     // --- Pendentes list ---
     const pendentes_list = pendenteItems.map((i) => {
-      const dateCol = i.column_values.find((c) => c.id === "date_mm1zythe");
+      const dateCol = i.column_values.find((c) => c.id === "date_mm1ys9b");
+      const tecnicoCol = i.column_values.find((c) => c.id === "text_mm1yfgtm");
+      const cpfCol = i.column_values.find((c) => c.id === "text_mm1yrhrs");
+      const episCol = i.column_values.find((c) => c.id === "long_text_mm25tz9r");
+      
+      let formattedDate = null;
+      if (dateCol?.text) {
+        const [yyyy, mm, dd] = dateCol.text.split('-');
+        if (yyyy && mm && dd) formattedDate = `${dd}/${mm}/${yyyy}`;
+      }
+
       return {
         id: i.id,
         nome: i.name,
-        data: dateCol?.text || null,
+        data: formattedDate || dateCol?.text || null,
+        cpf: cpfCol?.text || "",
+        tecnico: tecnicoCol?.text || "",
+        epis_esperados: episCol?.text || "",
       };
     });
 
@@ -124,6 +134,31 @@ router.get("/dashboard", async (_req, res) => {
       .map(([nome, qtd]) => ({ nome, qtd }))
       .sort((a, b) => b.qtd - a.qtd);
 
+    // --- Historico list ---
+    const historico_list = historicoItems.map((i) => {
+      const dateCol = i.column_values.find((c) => c.id === "date_mm1zythe");
+      const tecnicoCol = i.column_values.find((c) => c.id === "text_mm1yfgtm");
+      const cpfCol = i.column_values.find((c) => c.id === "text_mm1yrhrs");
+      const relCol = i.column_values.find((c) => c.id === "board_relation_mm258fse");
+      
+      const hasProblem = (relCol?.display_value || relCol?.text || "").trim() !== "";
+      
+      let formattedDate = null;
+      if (dateCol?.text) {
+        const [yyyy, mm, dd] = dateCol.text.split('-');
+        if (yyyy && mm && dd) formattedDate = `${dd}/${mm}/${yyyy}`;
+      }
+
+      return {
+        id: i.id,
+        nome: i.name,
+        data: formattedDate || dateCol?.text || null,
+        cpf: cpfCol?.text || "",
+        tecnico: tecnicoCol?.text || "",
+        status: hasProblem ? "Com Pendências" : "Sem Problema",
+      };
+    });
+
     res.json({
       pendentes,
       concluidas,
@@ -131,6 +166,7 @@ router.get("/dashboard", async (_req, res) => {
       semProblema,
       porTecnico,
       pendentes_list,
+      historico_list,
       epis_problematicos,
     });
   } catch (err) {

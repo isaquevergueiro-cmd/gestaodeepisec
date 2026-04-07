@@ -1,15 +1,67 @@
-:root {
-  color-scheme: dark;
+@import "tailwindcss";
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  font-family: 'Inter', sans-serif;
+  background: #121619;
+  color: #F3F4F6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  color-scheme: dark;
 }
 
-body {
-  margin: 0;
+/* Scrollbar customizada */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.10);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 229, 255, 0.30);
 }
 
-#root {
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
+input,
+textarea,
+select {
+  font-family: 'Inter', sans-serif;
+  outline: none;
+}
+
+button {
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  border: none;
+  background: none;
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.toast-slide-in {
+  animation: slideIn 0.25s ease forwards;
+}
+
+.sig-canvas {
+  touch-action: none;
+  border-radius: 10px;
+  display: block;
+  width: 100%;
 }
