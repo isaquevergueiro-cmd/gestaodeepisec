@@ -6,6 +6,7 @@ import { CadastroPage } from './pages/CadastroPage';
 import { BuscaPage } from './pages/BuscaPage';
 import { ConferenciaPage } from './pages/ConferenciaPage';
 import { HistoricoPage } from './pages/HistoricoPage';
+import { DevolutivaPage } from './pages/DevolutivaPage';
 
 function requireAuth() {
   const raw = localStorage.getItem('epi_tecnico');
@@ -27,6 +28,7 @@ export const router = createBrowserRouter([
       { path: 'cadastro', element: <CadastroPage /> },
       { path: 'busca', element: <BuscaPage /> },
       { path: 'conferencia', element: <ConferenciaPage /> },
+      { path: 'devolutiva',  element: <DevolutivaPage /> },
       { path: 'historico', element: <HistoricoPage /> },
     ],
   },

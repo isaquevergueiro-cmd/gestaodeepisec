@@ -6,6 +6,7 @@ import buscaRouter from "./routes/busca.js";
 import baixaRouter from "./routes/baixa.js";
 import dashboardRouter from "./routes/dashboard.js";
 import historicoRouter from "./routes/historico.js";
+import zapsignRouter from "./routes/zapsign.js";
 
 const app = express();
 const PORT = process.env.PORT ?? 3001;
@@ -19,6 +20,7 @@ app.use("/api", buscaRouter);
 app.use("/api", baixaRouter);
 app.use("/api", dashboardRouter);
 app.use("/api", historicoRouter);
+app.use("/api", zapsignRouter);
 
 app.get("/api/health", (_, res) =>
   res.json({ ok: true, timestamp: new Date().toISOString() })

@@ -51,7 +51,7 @@ export async function salvarBaixa(payload: SalvarBaixaPayload) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    return await checkResponse<{ offline?: boolean; message?: string }>(res);
+    return await checkResponse<{ offline?: boolean; message?: string; sign_url?: string }>(res);
   } catch (err) {
     const error = err as Error;
     if (!navigator.onLine || error.message.includes('Failed to fetch')) {

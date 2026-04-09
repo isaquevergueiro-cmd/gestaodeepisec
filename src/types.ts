@@ -6,6 +6,8 @@ export interface Tecnico {
 export interface EpiStatusItem {
   epi: string;
   status: 'Devolvido - Reuso' | 'Não Devolvido' | 'Devolvido - Descarte';
+  justificativa?: string;
+  prazo_marcado?: boolean;
 }
 
 export interface ConferenciaData {
@@ -13,15 +15,19 @@ export interface ConferenciaData {
   nome: string;
   cpf: string;
   epis_esperados: string[];
+  is_retorno?: boolean;
+  epis_ja_devolvidos?: string[];
 }
 
 export interface PendenteItem {
   id: string;
-  nome: string; // changed from name to nome to match backend
+  nome: string;
   data: string | null;
   cpf?: string;
   tecnico?: string;
   epis_esperados?: string;
+  epis_ja_devolvidos?: string[];
+  tipo?: 'Aguardando Devolução' | 'Aguardando Retorno de Item';
 }
 
 export interface DashboardData {
@@ -33,6 +39,9 @@ export interface DashboardData {
   epis_problematicos: { nome: string; qtd: number }[];
   pendentes_list: PendenteItem[];
   historico_list: HistoricoItem[];
+  total_descontado?: number;
+  descontos_rescisao?: number;
+  descontos_folha?: number;
 }
 
 export interface HistoricoItem {
@@ -43,6 +52,10 @@ export interface HistoricoItem {
   tecnico: string;
   data: string;
   contrato?: string;
+  epis_devolvidos?: string[];
+  epis_pendentes?: string[];
+  valor_desconto?: string;
+  motivo_acao?: string;
 }
 
 export interface CriarSolicitacaoPayload {

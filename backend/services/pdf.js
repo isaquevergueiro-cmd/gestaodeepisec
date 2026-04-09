@@ -85,8 +85,16 @@ export function generateReceiptPdf(dadosBaixa) {
     pageMargins: [40, 40, 40, 40],
   };
 
-  // Retorna Promise<Buffer>
-  return pdfmake.createPdf(docDefinition).getBuffer();
+  return new Promise(async (resolve, reject) => {
+    try {
+      const pdf = pdfmake.createPdf(docDefinition);
+      const buffer = await pdf.getBuffer();
+      resolve(buffer);
+    } catch (err) {
+      console.error("[PDF Error] Falha ao gerar Receipt:", err);
+      reject(err);
+    }
+  });
 }
 
 export function generateCautelaPdf(dadosBaixa) {
@@ -199,5 +207,14 @@ export function generateCautelaPdf(dadosBaixa) {
     pageMargins: [40, 40, 40, 40],
   };
 
-  return pdfmake.createPdf(docDefinition).getBuffer();
+  return new Promise(async (resolve, reject) => {
+    try {
+      const pdf = pdfmake.createPdf(docDefinition);
+      const buffer = await pdf.getBuffer();
+      resolve(buffer);
+    } catch (err) {
+      console.error("[PDF Error] Falha ao gerar Cautela:", err);
+      reject(err);
+    }
+  });
 }

@@ -4,7 +4,8 @@ const MONDAY_FILE_URL = "https://api.monday.com/v2/file";
 const BOARD_DEVOLUCOES = 18406415397;
 const BOARD_CATALOGO = 18406575530;
 
-import { generateCautelaPdf } from "./pdf.js";
+import { generateReceiptPdf } from "./pdf.js";
+import { criarDocZapSignCautela } from "./zapsign.js";
 
 // ─── GraphQL client ───────────────────────────────────────────────────────────
 
@@ -104,7 +105,8 @@ export async function buscarPorCpf(cpf) {
         items {
           id
           name
-          column_values(ids: ["long_text_mm25tz9r"]) {
+          column_values(ids: ["long_text_mm25tz9r", "color_mm1y6q34", "long_text_mm27kb2p"]) {
+            id
             text
           }
         }
@@ -117,10 +119,30 @@ export async function buscarPorCpf(cpf) {
   if (!items.length) throw new Error("Colaborador não encontrado para o CPF informado.");
 
   const item = items[0];
-  const episText = (item.column_values[0]?.text ?? "").trim();
+  
+  const colEpisBase  = item.column_values.find(c => c.id === "long_text_mm25tz9r")?.text ?? "";
+  const colPendentes = item.column_values.find(c => c.id === "long_text_mm27kb2p")?.text ?? "";
 
-  console.log(`[Busca] Encontrado: ${item.name} (ID ${item.id})`);
-  return { id_monday: item.id, nome: item.name, epis_esperados_string: episText };
+  // Se a coluna "EPIs Pendentes de Retorno" tem conteúdo → segunda visita
+  const isRetorno = colPendentes.trim() !== "";
+  const episText  = isRetorno ? colPendentes.trim() : colEpisBase.trim();
+
+  // EPIs já devolvidos = todos esperados MENOS os ainda pendentes
+  let epis_ja_devolvidos = [];
+  if (isRetorno && colEpisBase.trim() !== "") {
+    const todosEpis    = colEpisBase.split(/,\s*|\n/).map(e => e.trim()).filter(Boolean);
+    const pendentesSet = new Set(colPendentes.split(/,\s*|\n/).map(e => e.trim()).filter(Boolean));
+    epis_ja_devolvidos = todosEpis.filter(e => !pendentesSet.has(e));
+  }
+
+  console.log(`[Busca] Encontrado: ${item.name} (ID ${item.id}) | Retorno: ${isRetorno} | Pendentes: "${episText.slice(0,60)}" | Já entregues: ${epis_ja_devolvidos.length}`);
+  return { 
+    id_monday:          item.id, 
+    nome:               item.name, 
+    epis_esperados_string: episText,
+    is_retorno:         isRetorno,
+    epis_ja_devolvidos,
+  };
 }
 
 // ─── Fase 2 — Buscar por Nome ──────────────────────────────────────────────────
@@ -137,7 +159,7 @@ export async function buscarPorNome(nome) {
         items {
           id
           name
-          column_values(ids: ["text_mm1yrhrs", "long_text_mm25tz9r"]) {
+          column_values(ids: ["text_mm1yrhrs", "long_text_mm25tz9r", "color_mm1y6q34", "long_text_mm27kb2p"]) {
             id
             text
           }
@@ -159,7 +181,7 @@ export async function buscarPorNome(nome) {
             items {
               id
               name
-              column_values(ids: ["text_mm1yrhrs", "long_text_mm25tz9r"]) {
+              column_values(ids: ["text_mm1yrhrs", "long_text_mm25tz9r", "color_mm1y6q34", "long_text_mm27kb2p"]) {
                 id
                 text
               }
@@ -175,18 +197,31 @@ export async function buscarPorNome(nome) {
     
     if (!matched.length) throw new Error("Nenhum colaborador encontrado com este nome.");
     
+    
     return matched.map(item => {
       const colCpf = item.column_values.find(c => c.id === "text_mm1yrhrs")?.text ?? "";
-      const colEpis = item.column_values.find(c => c.id === "long_text_mm25tz9r")?.text ?? "";
-      return { id_monday: item.id, nome: item.name, cpf: colCpf, epis_esperados_string: colEpis };
+      
+      const colStatus = item.column_values.find(c => c.id === "color_mm1y6q34")?.text ?? "";
+      const aguardando = colStatus === "Pendente (Aguardando Retorno)" || colStatus === "Aguardando Colaborador";
+      const colEpisBase = item.column_values.find(c => c.id === "long_text_mm25tz9r")?.text ?? "";
+      const colPendentes = item.column_values.find(c => c.id === "long_text_mm27kb2p")?.text ?? "";
+      const episText = (aguardando && colPendentes.trim() !== "") ? colPendentes.trim() : colEpisBase.trim();
+
+      return { id_monday: item.id, nome: item.name, cpf: colCpf, epis_esperados_string: episText };
     });
   }
 
   // Se a primeira tentativa funcionou:
   return items.map(item => {
     const colCpf = item.column_values.find(c => c.id === "text_mm1yrhrs")?.text ?? "";
-    const colEpis = item.column_values.find(c => c.id === "long_text_mm25tz9r")?.text ?? "";
-    return { id_monday: item.id, nome: item.name, cpf: colCpf, epis_esperados_string: colEpis };
+    
+    const colStatus = item.column_values.find(c => c.id === "color_mm1y6q34")?.text ?? "";
+    const aguardando = colStatus === "Pendente (Aguardando Retorno)" || colStatus === "Aguardando Colaborador";
+    const colEpisBase = item.column_values.find(c => c.id === "long_text_mm25tz9r")?.text ?? "";
+    const colPendentes = item.column_values.find(c => c.id === "long_text_mm27kb2p")?.text ?? "";
+    const episText = (aguardando && colPendentes.trim() !== "") ? colPendentes.trim() : colEpisBase.trim();
+
+    return { id_monday: item.id, nome: item.name, cpf: colCpf, epis_esperados_string: episText };
   });
 }
 
@@ -236,7 +271,7 @@ function dataUrlToBuffer(dataUrl) {
 
 // ─── Helper — Upload de arquivo para coluna do Monday ────────────────────────
 
-async function uploadArquivo(item_id, column_id, buffer, mimeType, filename) {
+export async function uploadArquivo(item_id, column_id, buffer, mimeType, filename) {
   const mutation = `mutation ($file: File!) {
     add_file_to_column(item_id: ${item_id}, column_id: "${column_id}", file: $file) { id }
   }`;
@@ -268,9 +303,18 @@ export async function salvarBaixa({
   fotos_epis,
   tecnico_responsavel,
 }) {
-  // epis_problema agora é um array de objetos: { epi, status }
-  const temProblema = epis_problema.some(e => e.status !== "Devolvido - Reuso");
+  // epis_problema agora é um array de objetos: { epi, status, justificativa, prazo_marcado }
+  // Só consideramos "problema" (passível de ZapSign/Desconto) quem de fato NÃO devolver o EPI.
+  // Itens descartados (Devolvido - Descarte) foram fisicamente devolvidos e não penalizam.
+  const ehNaoDevolvido = (s) => s.toLowerCase().includes("n") && s.toLowerCase().includes("devolvido") && s.trim().split(" ").length <= 3;
+  const temProblema = epis_problema.some(e => ehNaoDevolvido(e.status));
+  const aguardandoRetorno = epis_problema.some(e => e.prazo_marcado);
   const dataDevolucao = new Date().toISOString().slice(0, 10);
+
+  const justificativasFull = epis_problema
+    .filter(e => e.justificativa)
+    .map(e => `${e.epi}: ${e.justificativa}`)
+    .join("\\n");
 
   // ── Step 1a: Campos seguros (texto, data, relação do catálogo) ───────────────
   console.log("[Baixa] Step 1a: atualizando campos seguros...");
@@ -280,9 +324,31 @@ export async function salvarBaixa({
     date_mm1zythe: { date: dataDevolucao },
   };
 
+  if (justificativasFull) {
+    safeValues.long_text_mm27305t = { text: justificativasFull };
+  }
+
+  const pendentesParaFuturo = epis_problema.filter(e => e.prazo_marcado).map(e => e.epi);
+
+  if (aguardandoRetorno) {
+    let date = new Date();
+    let addedDays = 0;
+    while (addedDays < 3) {
+      date.setDate(date.getDate() + 1);
+      if (date.getDay() !== 0 && date.getDay() !== 6) {
+        addedDays++;
+      }
+    }
+    safeValues.date_mm27vzkv = { date: date.toISOString().slice(0, 10) };
+    safeValues.long_text_mm27kb2p = { text: pendentesParaFuturo.join(", ") };
+  } else {
+    // Certeza que limpou ou não tem
+    safeValues.long_text_mm27kb2p = { text: "" };
+  }
+
   if (temProblema) {
     const nomesEPIsComProblema = epis_problema
-      .filter(e => e.status !== "Devolvido - Reuso")
+      .filter(e => ehNaoDevolvido(e.status))
       .map(e => e.epi);
     
     // Opcional: A gravação detalhada do status pode ser feita concatenando num Log ou automatizada
@@ -311,8 +377,12 @@ export async function salvarBaixa({
   // ⚠️  Se der erro aqui, confira os labels exatos nas colunas color_mm1y6q34
   //     e color_mm1y93j5 no Monday e atualize os valores abaixo.
   try {
+    let statusLabel = "Concluída";
+    if (aguardandoRetorno) statusLabel = "Pendente (Aguardando Retorno)";
+    else if (temProblema) statusLabel = "Com Pendências";
+
     const colorValues = {
-      color_mm1y6q34: { label: temProblema ? "Com Pendências" : "Concluída" },
+      color_mm1y6q34: { label: statusLabel },
       color_mm1y93j5: { label: temProblema ? "Sim" : "Não" },
     };
     const colorColVals = JSON.stringify(JSON.stringify(colorValues));
@@ -351,38 +421,92 @@ export async function salvarBaixa({
   await uploadArquivo(id_monday, "file_mm1yms92", sigBuf, sigMime, "assinatura.png");
   console.log("[Baixa] Step 3: assinatura enviada.");
 
-  // ── Step 3.1: Upload da Cautela PDF se houver problema ─────────────────────
-  if (temProblema) {
-    console.log("[Baixa] Step 3.1: gerando e enviando PDF de Cautela...");
+  // ── Step 3.1: Geração Nativa de Cautela via ZapSign (Se houver problema e NÃO pendente) ───
+  let sign_url_zapsign = null;
+
+  if (temProblema && !aguardandoRetorno) {
+    console.log("[Baixa] Step 3.1: Iniciando fluxo jurídico ZapSign...");
     try {
-      const pdfBuffer = await generateCautelaPdf({
+      // Busca valor do desconto e motivo da ação para enriquecer a Cautela
+      let valor_desconto = "A calcular";
+      let tipo_desconto  = "Folha de Pagamento";
+
+      try {
+        const itemInfo = await gql(`{
+          items(ids: [${id_monday}]) {
+            column_values(ids: ["lookup_mm259jnj", "color_mm1y1rf2"]) {
+              id
+              text
+              ... on MirrorValue { display_value }
+              ... on StatusValue { label }
+            }
+          }
+        }`);
+        const cols = itemInfo?.items?.[0]?.column_values ?? [];
+        const colValor  = cols.find(c => c.id === "lookup_mm259jnj");
+        const colMotivo = cols.find(c => c.id === "color_mm1y1rf2");
+
+        const valorRaw = colValor?.display_value || colValor?.text || "";
+        if (valorRaw && valorRaw.trim() !== "") valor_desconto = valorRaw.trim();
+
+        const motivoRaw = (colMotivo?.label || colMotivo?.text || "").toLowerCase();
+        if (motivoRaw.includes("desligamento")) tipo_desconto = "Rescisão";
+        
+        console.log(`[Baixa] Step 3.1: valor="${valor_desconto}" tipo="${tipo_desconto}"`);
+      } catch (e) {
+        console.warn("[Baixa] Step 3.1: Não foi possível buscar valor/motivo:", e.message);
+      }
+
+      const zapsignResult = await criarDocZapSignCautela({
+        id_monday,
         nome,
         cpf,
         tecnico_responsavel,
         epis_problema,
-        assinatura_base64
+        valor_desconto,
+        tipo_desconto,
       });
-      await uploadArquivo(id_monday, "file_mm1z1gbf", pdfBuffer, "application/pdf", "Termo_de_Cautela.pdf");
-      console.log("[Baixa] Step 3.1: Cautela enviada para o board.");
+      
+      sign_url_zapsign = zapsignResult.sign_url_colaborador;
+      console.log(`[Baixa] Step 3.1: ZapSign Documento Criado! ID: ${zapsignResult.doc_id}`);
     } catch (err) {
-      console.error("[Baixa] Erro ao enviar Cautela PDF para o Monday:", err.message);
+      console.error("[Baixa] Erro crítico na API ZapSign:", err.message);
     }
+  } else if (!aguardandoRetorno) {
+    console.log("[Baixa] Cautela pulada, devolução sem pendências definitivas não exige termo legal.");
   }
 
   // ── Step 4: Mover item para grupo Histórico (Devolvidos) ──────────────────
-  console.log("[Baixa] Step 4: movendo item para grupo histórico...");
-  await gql(`
-    mutation {
-      move_item_to_group(
-        item_id: ${id_monday},
-        group_id: "group_mm1y9na5"
-      ) { id }
-    }
-  `);
-  console.log("[Baixa] Step 4: item movido para Histórico.");
+  if (!aguardandoRetorno) {
+    console.log("[Baixa] Step 4: movendo item para grupo histórico...");
+    await gql(`
+      mutation {
+        move_item_to_group(
+          item_id: ${id_monday},
+          group_id: "group_mm1y9na5"
+        ) { id }
+      }
+    `);
+    console.log("[Baixa] Step 4: item movido para Histórico.");
+  } else {
+    console.log("[Baixa] Step 4: movendo item para grupo Pendente...");
+    await gql(`
+      mutation {
+        move_item_to_group(
+          item_id: ${id_monday},
+          group_id: "group_mm27y9f1"
+        ) { id }
+      }
+    `);
+    console.log("[Baixa] Step 4: Item movido para Pendentes.");
+  }
 
   console.log("[Baixa] Concluído com sucesso.");
-  return { ok: true, tecnico: tecnico_responsavel };
+  return { 
+    ok: true, 
+    tecnico: tecnico_responsavel,
+    sign_url: sign_url_zapsign 
+  };
 }
 
 // ─── Buscar Histórico (grupo "Devolvidos") ────────────────────────────────────
@@ -402,11 +526,17 @@ export async function buscarHistorico() {
                 "date_mm1zythe",
                 "text_mm1ypaa0",
                 "color_mm1y6q34",
-                "board_relation_mm258fse"
+                "board_relation_mm258fse",
+                "long_text_mm25tz9r",
+                "long_text_mm27kb2p",
+                "lookup_mm259jnj",
+                "color_mm1y1rf2"
               ]) {
                 id
                 text
                 ... on BoardRelationValue { display_value }
+                ... on MirrorValue { display_value }
+                ... on StatusValue { label }
               }
             }
           }
@@ -419,6 +549,18 @@ export async function buscarHistorico() {
 
   return items.map((item) => {
     const col = (id) => item.column_values.find((c) => c.id === id)?.text ?? "";
+    const colObj = (id) => item.column_values.find((c) => c.id === id) || {};
+
+    const epis_esperados = col("long_text_mm25tz9r").split(/,\s*|\n/).map(e => e.trim()).filter(Boolean);
+    const epis_pendentes = col("long_text_mm27kb2p").split(/,\s*|\n/).map(e => e.trim()).filter(Boolean);
+    
+    // Devolvidos = Esperados - Pendentes
+    const pendentesSet = new Set(epis_pendentes);
+    const epis_devolvidos = epis_esperados.filter(e => !pendentesSet.has(e));
+
+    const valorRaw = colObj("lookup_mm259jnj").display_value || col("lookup_mm259jnj") || "";
+    const motivoRaw = colObj("color_mm1y1rf2").label || col("color_mm1y1rf2") || "";
+
     return {
       id:       item.id,
       nome:     item.name,
@@ -427,6 +569,10 @@ export async function buscarHistorico() {
       data:     col("date_mm1zythe"),
       contrato: col("text_mm1ypaa0"),
       status:   item.column_values.find(c => c.id === "board_relation_mm258fse")?.text ? "Com Pendências" : "Concluída",
+      epis_devolvidos,
+      epis_pendentes,
+      valor_desconto: valorRaw,
+      motivo_acao: motivoRaw,
     };
   });
 }

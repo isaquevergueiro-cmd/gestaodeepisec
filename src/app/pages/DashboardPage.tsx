@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import {
   Clock, CheckCircle, AlertTriangle, ShieldCheck,
-  RefreshCw, ChevronLeft, ChevronRight,
+  RefreshCw, ChevronLeft, ChevronRight, DollarSign, TrendingDown,
 } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { getDashboard } from '../../api';
@@ -161,6 +161,37 @@ export function DashboardPage() {
           value={loading ? '—' : (data?.semProblema ?? 0)}
           sub="Conferências ok"
           trend="up"
+        />
+      </div>
+
+      <SectionTitle>Visão Financeira (Retenção)</SectionTitle>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 28 }}>
+        <KpiCard
+          icon={DollarSign}
+          iconColor="#EF4444"
+          iconBg="rgba(239,68,68,0.12)"
+          label="Total Descontado"
+          value={loading ? '—' : `R$ ${((data?.total_descontado ?? 0).toFixed(2)).replace('.', ',')}`}
+          sub="Valores retidos do colaborador"
+          trend="down"
+        />
+        <KpiCard
+          icon={TrendingDown}
+          iconColor="#F97316"
+          iconBg="rgba(249,115,22,0.12)"
+          label="Descontos na Folha"
+          value={loading ? '—' : `R$ ${((data?.descontos_folha ?? 0).toFixed(2)).replace('.', ',')}`}
+          sub="Folha de Pagamento"
+          trend="down"
+        />
+        <KpiCard
+          icon={TrendingDown}
+          iconColor="#A855F7"
+          iconBg="rgba(168,85,247,0.12)"
+          label="Descontos na Rescisão"
+          value={loading ? '—' : `R$ ${((data?.descontos_rescisao ?? 0).toFixed(2)).replace('.', ',')}`}
+          sub="Cobrança em Desligamento"
+          trend="down"
         />
       </div>
 
@@ -401,15 +432,21 @@ export function DashboardPage() {
                   if (activeTab !== 'pendentes') return;
                   if (!item.cpf) return;
                   const epis = item.epis_esperados
-                    ? item.epis_esperados.split(/\n|,\s*/).map(e => e.trim()).filter(Boolean)
+                    ? item.epis_esperados.split(/\n|,\s*/).map((e: string) => e.trim()).filter(Boolean)
                     : [];
                   const navData: ConferenciaData = {
                     id_monday: item.id,
                     nome: item.nome ?? '',
                     cpf: item.cpf ?? '',
                     epis_esperados: epis,
+                    is_retorno: item.tipo === 'Aguardando Retorno de Item',
+                    epis_ja_devolvidos: item.epis_ja_devolvidos ?? [],
                   };
-                  navigate('/conferencia', { state: navData });
+                  if (item.tipo === 'Aguardando Retorno de Item') {
+                    navigate('/devolutiva', { state: navData });
+                  } else {
+                    navigate('/conferencia', { state: navData });
+                  }
                 }}
                 style={{
                   display: 'grid',
@@ -457,7 +494,10 @@ export function DashboardPage() {
                   {item.tecnico || '—'}
                 </span>
                 {activeTab === 'pendentes' ? (
-                  <StatusBadge variant="warning" label="Pendente" />
+                  <StatusBadge 
+                    variant={item.tipo === 'Aguardando Retorno de Item' ? 'warning' : 'neutral'} 
+                    label={item.tipo === 'Aguardando Retorno de Item' ? '⏳ Aguardando Retorno' : '📋 Aguardando Devolução'} 
+                  />
                 ) : (
                   <StatusBadge 
                     variant={item.status === 'Com Pendências' ? 'danger' : 'success'} 

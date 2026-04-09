@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Search, RefreshCw, Filter, AlertCircle } from 'lucide-react';
+import { Search, RefreshCw, Filter, AlertCircle, X, CheckCircle2, Box, Info, DollarSign, Calendar } from 'lucide-react';
 import { getHistorico } from '../../api';
 import { StatusBadge, statusFromLabel } from '../components/StatusBadge';
 import { formatDate } from '../../utils';
@@ -12,6 +12,7 @@ export function HistoricoPage() {
   const [search,  setSearch]  = useState('');
   const [filter,  setFilter]  = useState('todos');
   const [page,    setPage]    = useState(1);
+  const [selectedItem, setSelectedItem] = useState<HistoricoItem | null>(null);
   const PER_PAGE = 10;
 
   async function fetchData() {
@@ -186,7 +187,9 @@ export function HistoricoPage() {
                 borderBottom: i < paginado.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
                 transition: 'background 0.15s ease',
                 alignItems: 'center',
+                cursor: 'pointer',
               }}
+              onClick={() => setSelectedItem(item)}
               onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.02)'; }}
               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
             >
@@ -257,6 +260,130 @@ export function HistoricoPage() {
           </div>
         )}
       </div>
+
+      {/* Modal de Detalhes */}
+      {selectedItem && (
+        <div
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999,
+            padding: 20,
+          }}
+          onClick={() => setSelectedItem(null)}
+        >
+          <div
+            style={{
+              background: '#1F242B', border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: 16, width: '100%', maxWidth: 640,
+              maxHeight: '90vh', overflowY: 'auto',
+              boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)',
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Cabecalho Modal */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: 18, color: '#F3F4F6', display: 'flex', alignItems: 'center', gap: 10 }}>
+                  Detalhes da Baixa
+                  <StatusBadge variant={statusFromLabel(selectedItem.status)} label={selectedItem.status} />
+                </h2>
+                <div style={{ marginTop: 6, fontSize: 13, color: '#9CA3AF', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Calendar size={14} /> Resolvido em: {formatDate(selectedItem.data)}
+                </div>
+              </div>
+              <button 
+                onClick={() => setSelectedItem(null)} 
+                style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: '#9CA3AF', width: 32, height: 32, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Conteudo Modal */}
+            <div style={{ padding: '24px' }}>
+              
+              {/* Infos do Colaborador e Tecnico */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
+                <div style={{ background: 'rgba(255,255,255,0.03)', padding: 16, borderRadius: 12, border: '1px solid rgba(255,255,255,0.05)' }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', marginBottom: 8, letterSpacing: 0.5 }}>Colaborador</div>
+                  <div style={{ fontSize: 14, fontWeight: 500, color: '#F3F4F6', marginBottom: 2 }}>{selectedItem.nome}</div>
+                  <div style={{ fontSize: 12, color: '#9CA3AF' }}>CPF: {selectedItem.cpf}</div>
+                  <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 2 }}>Contrato: {selectedItem.contrato || 'N/A'}</div>
+                </div>
+                <div style={{ background: 'rgba(255,255,255,0.03)', padding: 16, borderRadius: 12, border: '1px solid rgba(255,255,255,0.05)' }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', marginBottom: 8, letterSpacing: 0.5 }}>Técnico Responsável</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(0,229,255,0.1)', color: '#00E5FF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 600 }}>T</div>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: '#F3F4F6' }}>{selectedItem.tecnico}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Status Financeiro */}
+              {(selectedItem.valor_desconto && selectedItem.valor_desconto.trim() !== "0" && selectedItem.valor_desconto.trim() !== "") && (
+                <div style={{ background: 'linear-gradient(to right, rgba(239,68,68,0.1), rgba(239,68,68,0.02))', padding: '16px 20px', borderRadius: 12, border: '1px solid rgba(239,68,68,0.2)', marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{ background: 'rgba(239,68,68,0.15)', color: '#EF4444', width: 40, height: 40, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <DollarSign size={20} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#FCA5A5' }}>Desconto Aplicado</div>
+                      <div style={{ fontSize: 12, color: '#F87171' }}>Motivo: {selectedItem.motivo_acao || 'N/A'}</div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: '#EF4444' }}>
+                    {selectedItem.valor_desconto}
+                  </div>
+                </div>
+              )}
+
+              {/* Listas de EPIs */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {selectedItem.epis_devolvidos && selectedItem.epis_devolvidos.length > 0 && (
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, color: '#00E676', fontSize: 13, fontWeight: 600 }}>
+                      <CheckCircle2 size={16} /> Devolvidos / Reutilizados ({selectedItem.epis_devolvidos.length})
+                    </div>
+                    <div style={{ background: 'rgba(0,230,118,0.05)', border: '1px solid rgba(0,230,118,0.1)', borderRadius: 8, padding: 12 }}>
+                      {selectedItem.epis_devolvidos.map((epi, idx) => (
+                        <div key={idx} style={{ padding: '6px 0', fontSize: 13, color: '#E5E7EB', display: 'flex', alignItems: 'center', gap: 8, borderBottom: idx < (selectedItem.epis_devolvidos?.length || 0) - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
+                          <Box size={14} color="#00E676" opacity={0.6} /> {epi}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {selectedItem.epis_pendentes && selectedItem.epis_pendentes.length > 0 && (
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, color: '#EF4444', fontSize: 13, fontWeight: 600 }}>
+                      <AlertCircle size={16} /> Pendentes / Faltantes ({selectedItem.epis_pendentes.length})
+                    </div>
+                    <div style={{ background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.1)', borderRadius: 8, padding: 12 }}>
+                      {selectedItem.epis_pendentes.map((epi, idx) => (
+                        <div key={idx} style={{ padding: '6px 0', fontSize: 13, color: '#E5E7EB', display: 'flex', alignItems: 'center', gap: 8, borderBottom: idx < (selectedItem.epis_pendentes?.length || 0) - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
+                          <Box size={14} color="#EF4444" opacity={0.6} /> {epi}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {!(selectedItem.epis_devolvidos && selectedItem.epis_devolvidos.length > 0) && !(selectedItem.epis_pendentes && selectedItem.epis_pendentes.length > 0) && (
+                   <div style={{ textAlign: 'center', padding: 20, color: '#6B7280', fontSize: 13, background: 'rgba(255,255,255,0.02)', borderRadius: 8 }}>
+                     <Info size={16} style={{ marginBottom: 8, opacity: 0.5 }} />
+                     <div>Nenhuma informação detalhada de EPIs encontrada para este item.</div>
+                   </div>
+                )}
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

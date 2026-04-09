@@ -30,6 +30,8 @@ export function ConferenciaPage() {
   const [fotosMap,  setFotosMap]  = useState<Record<number, string | null>>(() =>
     Object.fromEntries((dados?.epis_esperados ?? []).map((_, i) => [i, null])),
   );
+  const [justificativasMap, setJustificativasMap] = useState<Record<number, string>>({});
+  const [prazoMap, setPrazoMap] = useState<Record<number, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [msg,     setMsg]     = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -58,10 +60,10 @@ export function ConferenciaPage() {
   const { id_monday, nome, cpf, epis_esperados } = dados;
 
   const todosAvaliados = Object.values(statusMap).every(s => s !== null);
-  const todasFotos     = Object.values(fotosMap).every(f => f !== null);
+  const todasFotos     = epis_esperados.every((_, i) => statusMap[i] === 'nao_devolvido' || fotosMap[i] !== null);
   const problemas      = Object.values(statusMap).filter(s => s !== null && s !== 'reaproveitavel').length;
   const avaliadosCount = Object.values(statusMap).filter(Boolean).length;
-  const fotosCount     = Object.values(fotosMap).filter(Boolean).length;
+  const fotosCount     = Object.values(fotosMap).filter(f => f !== null).length;
 
   function setStatus(i: number, key: EpiKey) {
     setStatusMap(prev => ({ ...prev, [i]: prev[i] === key ? null : key }));
@@ -79,8 +81,13 @@ export function ConferenciaPage() {
   async function handleFinalizar() {
     if (!todosAvaliados) { setMsg({ type: 'error', text: 'Avalie todos os EPIs antes de finalizar.' }); return; }
     if (!todasFotos) {
-      const faltando = epis_esperados.filter((_, i) => !fotosMap[i]).join(', ');
+      const faltando = epis_esperados.filter((_, i) => statusMap[i] !== 'nao_devolvido' && !fotosMap[i]).join(', ');
       setMsg({ type: 'error', text: `Foto obrigatória para: ${faltando}` });
+      return;
+    }
+    const semJustificativa = epis_esperados.filter((_, i) => statusMap[i] === 'nao_devolvido' && !justificativasMap[i]?.trim()).join(', ');
+    if (semJustificativa) {
+      setMsg({ type: 'error', text: `Justificativa obrigatória para os itens faltantes: ${semJustificativa}` });
       return;
     }
     if (!sigRef.current || sigRef.current.isEmpty()) {
@@ -93,10 +100,14 @@ export function ConferenciaPage() {
       return {
         epi,
         status: (key === 'reaproveitavel' ? 'Devolvido - Reuso' : key === 'descarte' ? 'Devolvido - Descarte' : 'Não Devolvido') as 'Devolvido - Reuso' | 'Não Devolvido' | 'Devolvido - Descarte',
+        justificativa: key === 'nao_devolvido' ? justificativasMap[i] : undefined,
+        prazo_marcado: key === 'nao_devolvido' ? prazoMap[i] : undefined,
       };
     });
 
-    const fotos_epis      = epis_esperados.map((epi, i) => ({ nome: epi, base64: fotosMap[i]! }));
+    const fotos_epis = epis_esperados
+      .map((epi, i) => ({ nome: epi, base64: fotosMap[i] }))
+      .filter(f => f.base64 !== null) as { nome: string; base64: string }[];
     // Exporta a assinatura com fundo branco para garantir visibilidade no PDF
     const rawCanvas = sigRef.current.getCanvas();
     const exportCanvas = document.createElement('canvas');
@@ -112,10 +123,18 @@ export function ConferenciaPage() {
     setMsg(null);
     try {
       const payloadBase = { id_monday, nome, cpf, epis_problema, fotos_epis, assinatura_base64, tecnico_responsavel: tecnico?.nome ?? 'Desconhecido' };
-      await salvarBaixa(payloadBase);
+      const response = await salvarBaixa(payloadBase);
       
-      setMsg({ type: 'success', text: 'Conferência finalizada com sucesso!' });
-      setTimeout(() => navigate('/'), 2500);
+      setMsg({ type: 'success', text: response.sign_url ? 'Redirecionando para Assinatura Legal...' : 'Conferência finalizada com sucesso!' });
+      
+      setTimeout(() => {
+        if (response.sign_url) {
+          window.location.href = response.sign_url;
+        } else {
+          navigate('/');
+        }
+      }, response.sign_url ? 1500 : 2500);
+      
     } catch (err) {
       setMsg({ type: 'error', text: `Erro ao finalizar: ${(err as Error).message}` });
       setLoading(false);
@@ -259,49 +278,75 @@ export function ConferenciaPage() {
                   ))}
                 </div>
 
-                {/* Foto */}
-                <input
-                  ref={el => { fileInputsRef.current[i] = el; }}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  style={{ display: 'none' }}
-                  onChange={e => handleFotoChange(i, e)}
-                />
-
-                {foto ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <img
-                      src={foto}
-                      alt={`Foto ${epi}`}
-                      style={{ width: 72, height: 54, objectFit: 'cover', borderRadius: 8, border: '1px solid rgba(0,230,118,0.25)' }}
+                {/* Foto ou Justificativa */}
+                {status !== 'nao_devolvido' ? (
+                  <>
+                    <input
+                      ref={el => { fileInputsRef.current[i] = el; }}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      style={{ display: 'none' }}
+                      onChange={e => handleFotoChange(i, e)}
                     />
-                    <button
-                      onClick={() => fileInputsRef.current[i]?.click()}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 6,
-                        padding: '6px 12px', borderRadius: 8,
-                        background: 'rgba(255,255,255,0.05)',
-                        border: '1px solid rgba(255,255,255,0.08)',
-                        color: '#9CA3AF', fontSize: 12, cursor: 'pointer',
-                      }}
-                    >
-                      <RotateCcw size={12} /> Refazer
-                    </button>
-                  </div>
+
+                    {foto ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <img
+                          src={foto}
+                          alt={`Foto ${epi}`}
+                          style={{ width: 72, height: 54, objectFit: 'cover', borderRadius: 8, border: '1px solid rgba(0,230,118,0.25)' }}
+                        />
+                        <button
+                          onClick={() => fileInputsRef.current[i]?.click()}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 6,
+                            padding: '6px 12px', borderRadius: 8,
+                            background: 'rgba(255,255,255,0.05)',
+                            border: '1px solid rgba(255,255,255,0.08)',
+                            color: '#9CA3AF', fontSize: 12, cursor: 'pointer',
+                          }}
+                        >
+                          <RotateCcw size={12} /> Refazer
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => fileInputsRef.current[i]?.click()}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 8,
+                          padding: '8px 16px', borderRadius: 8,
+                          background: 'rgba(255,255,255,0.04)',
+                          border: '1px solid rgba(255,255,255,0.08)',
+                          color: '#6B7280', fontSize: 12, cursor: 'pointer',
+                        }}
+                      >
+                        <Camera size={14} /> Tirar foto do EPI
+                      </button>
+                    )}
+                  </>
                 ) : (
-                  <button
-                    onClick={() => fileInputsRef.current[i]?.click()}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 8,
-                      padding: '8px 16px', borderRadius: 8,
-                      background: 'rgba(255,255,255,0.04)',
-                      border: '1px solid rgba(255,255,255,0.08)',
-                      color: '#6B7280', fontSize: 12, cursor: 'pointer',
-                    }}
-                  >
-                    <Camera size={14} /> Tirar foto do EPI
-                  </button>
+                  <div style={{ marginTop: 12, padding: 12, background: 'rgba(239,68,68,0.05)', borderRadius: 8 }}>
+                    <label style={{ fontSize: 12, color: '#EF4444', marginBottom: 6, display: 'block' }}>
+                      Justificativa Obrigatória *
+                    </label>
+                    <textarea
+                      value={justificativasMap[i] || ''}
+                      onChange={e => setJustificativasMap(prev => ({ ...prev, [i]: e.target.value }))}
+                      style={{ width: '100%', padding: '8px', borderRadius: 6, background: '#1F2937', color: 'white', border: '1px solid rgba(239,68,68,0.2)' }}
+                      placeholder="Escreva por que o item está faltando..."
+                      rows={2}
+                    />
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 12, color: '#E5E7EB', cursor: 'pointer' }}>
+                      <input 
+                        type="checkbox" 
+                        checked={prazoMap[i] || false}
+                        onChange={e => setPrazoMap(prev => ({ ...prev, [i]: e.target.checked }))}
+                        style={{ accentColor: '#00E5FF', width: 16, height: 16 }}
+                      />
+                      Trarei o item depois (Prazo de 3 dias úteis)
+                    </label>
+                  </div>
                 )}
               </div>
             );

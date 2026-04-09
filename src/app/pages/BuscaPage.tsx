@@ -12,6 +12,8 @@ interface SearchResult {
   nome: string;
   cpf: string;
   epis_esperados: string[];
+  is_retorno?: boolean;
+  epis_ja_devolvidos?: string[];
 }
 
 interface RecenteItem {
@@ -125,6 +127,8 @@ export function BuscaPage() {
           nome: data.nome,
           cpf: data.cpf || 'Não informado',
           epis_esperados: epis,
+          is_retorno: data.is_retorno ?? false,
+          epis_ja_devolvidos: data.epis_ja_devolvidos ?? [],
         };
       });
 
@@ -149,10 +153,12 @@ export function BuscaPage() {
     let dados: ConferenciaData;
     if (dadosBusca) {
       dados = {
-        id_monday:      dadosBusca.id_monday,
-        nome:           dadosBusca.nome,
-        cpf:            dadosBusca.cpf,
-        epis_esperados: dadosBusca.epis_esperados,
+        id_monday:          dadosBusca.id_monday,
+        nome:               dadosBusca.nome,
+        cpf:                dadosBusca.cpf,
+        epis_esperados:     dadosBusca.epis_esperados,
+        is_retorno:         dadosBusca.is_retorno,
+        epis_ja_devolvidos: dadosBusca.epis_ja_devolvidos,
       };
     } else if (dadosRecente) {
       dados = {
@@ -164,7 +170,12 @@ export function BuscaPage() {
     } else {
       return;
     }
-    navigate('/conferencia', { state: dados });
+    
+    if (dados.is_retorno) {
+      navigate('/devolutiva', { state: dados });
+    } else {
+      navigate('/conferencia', { state: dados });
+    }
   }
 
   return (
@@ -535,25 +546,16 @@ export function BuscaPage() {
           <button
             onClick={() => iniciarConferencia(result)}
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              width: '100%',
-              padding: '13px',
-              borderRadius: 10,
-              background: 'linear-gradient(135deg, rgba(0,230,118,0.15), rgba(0,230,118,0.08))',
-              border: '1px solid rgba(0,230,118,0.30)',
-              color: '#00E676',
-              fontSize: 14,
-              fontWeight: 600,
-              cursor: 'pointer',
-              justifyContent: 'center',
-              transition: 'box-shadow 0.2s ease',
+              display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '13px', borderRadius: 10,
+              background: result.is_retorno
+                ? 'linear-gradient(135deg, rgba(245,158,11,0.15), rgba(245,158,11,0.08))'
+                : 'linear-gradient(135deg, rgba(0,230,118,0.15), rgba(0,230,118,0.08))',
+              border: result.is_retorno ? '1px solid rgba(245,158,11,0.30)' : '1px solid rgba(0,230,118,0.30)',
+              color: result.is_retorno ? '#F59E0B' : '#00E676',
+              fontSize: 14, fontWeight: 600, cursor: 'pointer', justifyContent: 'center', transition: 'box-shadow 0.2s ease',
             }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.boxShadow = '0 0 20px rgba(0,230,118,0.25)'; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.boxShadow = 'none'; }}
           >
-            Iniciar Conferência de EPIs
+            {result.is_retorno ? '⏳ Registrar Devolutiva de Pendências' : 'Iniciar Conferência de EPIs'}
             <ArrowRight size={16} />
           </button>
         </div>
