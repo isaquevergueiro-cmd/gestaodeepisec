@@ -6,12 +6,14 @@ import {
 import {
   Clock, CheckCircle, AlertTriangle, ShieldCheck,
   RefreshCw, ChevronLeft, ChevronRight, DollarSign, TrendingDown,
+  UserPlus, UserMinus, Repeat
 } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { getDashboard } from '../../api';
 import { KpiCard } from '../components/KpiCard';
 import { StatusBadge } from '../components/StatusBadge';
 import { formatDate } from '../../utils';
+import { CARGOS } from '../../catalog';
 import type { DashboardData, ConferenciaData } from '../../types';
 
 const DONUT_COLORS = ['#F59E0B', '#00E676', '#EF4444', '#00E5FF'];
@@ -60,13 +62,23 @@ export function DashboardPage() {
   const [error, setError]     = useState('');
   const [page, setPage]       = useState(1);
   const [activeTab, setActiveTab] = useState<'pendentes' | 'concluidas' | 'problema' | 'sem_problema'>('pendentes');
+
+  // Inicializa com o mês atual automaticamente
+  const mesAtual = new Date().toISOString().slice(0, 7); // "YYYY-MM"
+  const [mesAno, setMesAno]     = useState(mesAtual);
+  const [contrato, setContrato] = useState('');
+  const [epiBusca, setEpiBusca] = useState('');
   const PER_PAGE = 5;
 
   async function fetchData() {
     setLoading(true);
     setError('');
     try {
-      const d = await getDashboard();
+      const d = await getDashboard({
+        mesAno: mesAno || undefined,
+        contrato: contrato || undefined,
+        epi: epiBusca || undefined
+      });
       setData(d);
     } catch (err) {
       setError((err as Error).message);
@@ -75,13 +87,14 @@ export function DashboardPage() {
     }
   }
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { fetchData(); }, [mesAno, contrato, epiBusca]);
 
   // Atualiza a cada 60s
   useEffect(() => {
     const interval = setInterval(fetchData, 60_000);
     return () => clearInterval(interval);
-  }, []);
+  }, [mesAno, contrato, epiBusca]);
+
 
   const barData = data?.epis_problematicos
     ? [...data.epis_problematicos]
@@ -124,6 +137,52 @@ export function DashboardPage() {
 
   return (
     <div>
+      {/* Filtros */}
+      <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <div style={{ flex: 1, minWidth: 150 }}>
+          <label style={{ display: 'block', fontSize: 12, color: '#9CA3AF', marginBottom: 6 }}>Mês/Ano</label>
+          <input
+            type="month"
+            value={mesAno}
+            onChange={(e) => setMesAno(e.target.value)}
+            style={{ width: '100%', padding: '8px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#F3F4F6', fontSize: 13 }}
+          />
+        </div>
+        <div style={{ flex: 1, minWidth: 150 }}>
+          <label style={{ display: 'block', fontSize: 12, color: '#9CA3AF', marginBottom: 6 }}>Contrato</label>
+          <select
+            value={contrato}
+            onChange={(e) => setContrato(e.target.value)}
+            style={{ width: '100%', padding: '8px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#F3F4F6', fontSize: 13 }}
+          >
+            <option value="">Todos os contratos</option>
+            {CARGOS.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+        <div style={{ flex: 1, minWidth: 150 }}>
+          <label style={{ display: 'block', fontSize: 12, color: '#9CA3AF', marginBottom: 6 }}>Material/EPI</label>
+          <input
+            type="text"
+            placeholder="Ex: Botina, Camisa..."
+            value={epiBusca}
+            onChange={(e) => setEpiBusca(e.target.value)}
+            style={{ width: '100%', padding: '8px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#F3F4F6', fontSize: 13 }}
+          />
+        </div>
+        <button
+          onClick={fetchData}
+          disabled={loading}
+          style={{
+            padding: '8px 16px', borderRadius: 8,
+            background: 'rgba(0,229,255,0.15)', border: '1px solid rgba(0,229,255,0.3)',
+            color: '#00E5FF', fontSize: 13, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer',
+            display: 'flex', alignItems: 'center', gap: 6, height: 38
+          }}
+        >
+          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Filtrar
+        </button>
+      </div>
+
       {/* KPI Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 28 }}>
         <KpiCard
@@ -161,6 +220,46 @@ export function DashboardPage() {
           value={loading ? '—' : (data?.semProblema ?? 0)}
           sub="Conferências ok"
           trend="up"
+        />
+      </div>
+
+      <SectionTitle>Ações Requisitadas (Categorias)</SectionTitle>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 28 }}>
+        <KpiCard
+          icon={UserPlus}
+          iconColor="#A855F7"
+          iconBg="rgba(168,85,247,0.12)"
+          label="Admissional"
+          value={loading ? '—' : (data?.categoriasVisao?.admissional ?? 0)}
+          sub="Entregas Iniciais"
+          trend="neutral"
+        />
+        <KpiCard
+          icon={UserMinus}
+          iconColor="#EF4444"
+          iconBg="rgba(239,68,68,0.12)"
+          label="Demissional"
+          value={loading ? '—' : (data?.categoriasVisao?.demissional ?? 0)}
+          sub="Rescisões e Desligamentos"
+          trend="neutral"
+        />
+        <KpiCard
+          icon={RefreshCw}
+          iconColor="#F59E0B"
+          iconBg="rgba(245,158,11,0.12)"
+          label="Troca c/ Devolução"
+          value={loading ? '—' : (data?.categoriasVisao?.renovacao_com_devolucao ?? 0)}
+          sub="Renovação Padrão"
+          trend="neutral"
+        />
+        <KpiCard
+          icon={Repeat}
+          iconColor="#00E676"
+          iconBg="rgba(0,230,118,0.12)"
+          label="Troca s/ Devolução"
+          value={loading ? '—' : (data?.categoriasVisao?.renovacao_sem_devolucao ?? 0)}
+          sub="Renovação Extraordinária"
+          trend="neutral"
         />
       </div>
 
@@ -393,13 +492,16 @@ export function DashboardPage() {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: '2fr 1.5fr 1.2fr 1fr 1fr',
+              gridTemplateColumns: activeTab === 'pendentes' ? '2fr 1.5fr 1.2fr 1fr' : '2fr 1.5fr 1.2fr 1fr 1fr',
               background: 'rgba(0,0,0,0.20)',
               borderBottom: '1px solid rgba(255,255,255,0.06)',
               padding: '12px 24px',
             }}
           >
-            {['Colaborador', 'CPF', 'Data Solicitação', 'Técnico', 'Status'].map(col => (
+            {(activeTab === 'pendentes' 
+              ? ['Colaborador', 'Tels (Cobrança)', 'Data Solicitação', 'Status']
+              : ['Colaborador', 'CPF', 'Data Solicitação', 'Técnico', 'Status']
+            ).map(col => (
               <span
                 key={col}
                 style={{
@@ -450,7 +552,7 @@ export function DashboardPage() {
                 }}
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '2fr 1.5fr 1.2fr 1fr 1fr',
+                  gridTemplateColumns: activeTab === 'pendentes' ? '2fr 1.5fr 1.2fr 1fr' : '2fr 1.5fr 1.2fr 1fr 1fr',
                   padding: '14px 24px',
                   borderBottom: i < paginado.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
                   transition: 'background 0.15s ease',
@@ -484,15 +586,25 @@ export function DashboardPage() {
                     {item.nome ?? '—'}
                   </span>
                 </div>
-                <span style={{ fontSize: 12, color: '#9CA3AF', fontVariantNumeric: 'tabular-nums' }}>
-                  {item.cpf || '—'}
-                </span>
+                {activeTab === 'pendentes' ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    {item.telefone1 ? <span style={{ fontSize: 12, color: '#00E5FF', fontVariantNumeric: 'tabular-nums' }}>📞 {item.telefone1}</span> : null}
+                    {item.telefone2 ? <span style={{ fontSize: 11, color: '#9CA3AF', fontVariantNumeric: 'tabular-nums' }}>📞 {item.telefone2}</span> : null}
+                    {!item.telefone1 && !item.telefone2 && <span style={{ fontSize: 12, color: '#6B7280' }}>Sem contato</span>}
+                  </div>
+                ) : (
+                  <span style={{ fontSize: 12, color: '#9CA3AF', fontVariantNumeric: 'tabular-nums' }}>
+                    {item.cpf || '—'}
+                  </span>
+                )}
                 <span style={{ fontSize: 12, color: '#9CA3AF' }}>
                   {formatDate(item.data || '')}
                 </span>
-                <span style={{ fontSize: 12, color: '#9CA3AF' }}>
-                  {item.tecnico || '—'}
-                </span>
+                {activeTab !== 'pendentes' && (
+                  <span style={{ fontSize: 12, color: '#9CA3AF' }}>
+                    {item.tecnico || '—'}
+                  </span>
+                )}
                 {activeTab === 'pendentes' ? (
                   <StatusBadge 
                     variant={item.tipo === 'Aguardando Retorno de Item' ? 'warning' : 'neutral'} 

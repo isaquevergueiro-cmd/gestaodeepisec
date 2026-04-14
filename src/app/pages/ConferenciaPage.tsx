@@ -24,11 +24,19 @@ export function ConferenciaPage() {
   const tecnico  = getTecnicoFromStorage();
   const dados    = location.state as ConferenciaData | undefined;
 
+  const subitens = dados?.subitens || (dados?.epis_esperados || []).map((nome, i) => ({
+    id: `fallback_${i}`,
+    nome,
+    tamanho: '',
+    qtd: 1,
+    status: 'A definir',
+  }));
+
   const [statusMap, setStatusMap] = useState<Record<number, EpiKey | null>>(() =>
-    Object.fromEntries((dados?.epis_esperados ?? []).map((_, i) => [i, null])),
+    Object.fromEntries(subitens.map((_, i) => [i, null])),
   );
   const [fotosMap,  setFotosMap]  = useState<Record<number, string | null>>(() =>
-    Object.fromEntries((dados?.epis_esperados ?? []).map((_, i) => [i, null])),
+    Object.fromEntries(subitens.map((_, i) => [i, null])),
   );
   const [justificativasMap, setJustificativasMap] = useState<Record<number, string>>({});
   const [prazoMap, setPrazoMap] = useState<Record<number, boolean>>({});
@@ -57,10 +65,10 @@ export function ConferenciaPage() {
     );
   }
 
-  const { id_monday, nome, cpf, epis_esperados } = dados;
+  const { id_monday, nome, cpf } = dados;
 
   const todosAvaliados = Object.values(statusMap).every(s => s !== null);
-  const todasFotos     = epis_esperados.every((_, i) => statusMap[i] === 'nao_devolvido' || fotosMap[i] !== null);
+  const todasFotos     = subitens.every((_, i) => statusMap[i] === 'nao_devolvido' || fotosMap[i] !== null);
   const problemas      = Object.values(statusMap).filter(s => s !== null && s !== 'reaproveitavel').length;
   const avaliadosCount = Object.values(statusMap).filter(Boolean).length;
   const fotosCount     = Object.values(fotosMap).filter(f => f !== null).length;
@@ -81,11 +89,11 @@ export function ConferenciaPage() {
   async function handleFinalizar() {
     if (!todosAvaliados) { setMsg({ type: 'error', text: 'Avalie todos os EPIs antes de finalizar.' }); return; }
     if (!todasFotos) {
-      const faltando = epis_esperados.filter((_, i) => statusMap[i] !== 'nao_devolvido' && !fotosMap[i]).join(', ');
+      const faltando = subitens.filter((_, i) => statusMap[i] !== 'nao_devolvido' && !fotosMap[i]).map(s => s.nome).join(', ');
       setMsg({ type: 'error', text: `Foto obrigatória para: ${faltando}` });
       return;
     }
-    const semJustificativa = epis_esperados.filter((_, i) => statusMap[i] === 'nao_devolvido' && !justificativasMap[i]?.trim()).join(', ');
+    const semJustificativa = subitens.filter((_, i) => statusMap[i] === 'nao_devolvido' && !justificativasMap[i]?.trim()).map(s => s.nome).join(', ');
     if (semJustificativa) {
       setMsg({ type: 'error', text: `Justificativa obrigatória para os itens faltantes: ${semJustificativa}` });
       return;
@@ -95,19 +103,30 @@ export function ConferenciaPage() {
       return;
     }
 
-    const epis_problema = epis_esperados.map((epi, i) => {
+    const epis_problema = subitens.map((sub, i) => {
       const key = statusMap[i];
+      // Label EXATO que deve estar configurado no Monday (color_mm2csadv)
+      const statusLabel =
+        key === 'reaproveitavel' ? 'Reaproveitável'
+        : key === 'descarte'     ? 'Descarte/Dano'
+        :                          'Não Devolvido';
       return {
-        epi,
-        status: (key === 'reaproveitavel' ? 'Devolvido - Reuso' : key === 'descarte' ? 'Devolvido - Descarte' : 'Não Devolvido') as 'Devolvido - Reuso' | 'Não Devolvido' | 'Devolvido - Descarte',
-        justificativa: key === 'nao_devolvido' ? justificativasMap[i] : undefined,
-        prazo_marcado: key === 'nao_devolvido' ? prazoMap[i] : undefined,
+        index:             i,                                              // para match preciso de foto
+        id_monday_subitem: sub.id.startsWith('fallback_') ? null : sub.id, // null = subitem novo via createSubitem
+        epi:               sub.nome,
+        tamanho:           sub.tamanho || '',
+        qtd:               sub.qtd    ?? 1,
+        status:            statusLabel,
+        justificativa:     key === 'nao_devolvido' ? (justificativasMap[i]?.trim() || '') : '',
+        prazo_marcado:     key === 'nao_devolvido' ? (prazoMap[i] === true) : false,
       };
     });
 
-    const fotos_epis = epis_esperados
-      .map((epi, i) => ({ nome: epi, base64: fotosMap[i] }))
-      .filter(f => f.base64 !== null) as { nome: string; base64: string }[];
+    // fotos indexadas por i para evitar bugs com EPIs de mesmo nome
+    const fotos_epis = subitens
+      .map((sub, i) => ({ index: i, nome: sub.nome, base64: fotosMap[i] }))
+      .filter(f => f.base64 !== null) as { index: number; nome: string; base64: string }[];
+
     // Exporta a assinatura com fundo branco para garantir visibilidade no PDF
     const rawCanvas = sigRef.current.getCanvas();
     const exportCanvas = document.createElement('canvas');
@@ -122,8 +141,18 @@ export function ConferenciaPage() {
     setLoading(true);
     setMsg(null);
     try {
-      const payloadBase = { id_monday, nome, cpf, epis_problema, fotos_epis, assinatura_base64, tecnico_responsavel: tecnico?.nome ?? 'Desconhecido' };
+      const payloadBase = {
+        id_monday,
+        nome,
+        cpf,
+        contrato: dados.contrato ?? '',   // ← OBRIGATÓRIO para o PDF/ZapSign
+        epis_problema,
+        fotos_epis,
+        assinatura_base64,
+        tecnico_responsavel: tecnico?.nome ?? 'Desconhecido',
+      };
       const response = await salvarBaixa(payloadBase);
+
       
       setMsg({ type: 'success', text: response.sign_url ? 'Redirecionando para Assinatura Legal...' : 'Conferência finalizada com sucesso!' });
       
@@ -171,8 +200,19 @@ export function ConferenciaPage() {
         </button>
 
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 16, fontWeight: 600, color: '#F3F4F6' }}>{nome}</div>
-          <div style={{ fontSize: 12, color: '#6B7280', fontVariantNumeric: 'tabular-nums' }}>CPF: {cpf}</div>
+          <div style={{ fontSize: 16, fontWeight: 600, color: '#F3F4F6', display: 'flex', alignItems: 'center', gap: 10 }}>
+            {nome}
+            {dados.contrato && (
+              <span style={{ fontSize: 11, background: 'rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: 4, fontWeight: 500, color: '#D1D5DB' }}>
+                {dados.contrato}
+              </span>
+            )}
+          </div>
+          <div style={{ fontSize: 12, color: '#6B7280', fontVariantNumeric: 'tabular-nums', display: 'flex', gap: 12, marginTop: 4 }}>
+            <span>CPF: {cpf}</span>
+            {dados.telefone1 && <span>• Tel: {dados.telefone1}</span>}
+            {dados.telefone2 && <span>• Tel 2: {dados.telefone2}</span>}
+          </div>
         </div>
 
         {problemas > 0 && (
@@ -183,8 +223,8 @@ export function ConferenciaPage() {
       {/* Progresso */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
         {[
-          { label: `${avaliadosCount}/${epis_esperados.length} avaliados`, done: todosAvaliados },
-          { label: `${fotosCount}/${epis_esperados.length} fotos`,         done: todasFotos },
+          { label: `${avaliadosCount}/${subitens.length} avaliados`, done: todosAvaliados },
+          { label: `${fotosCount}/${subitens.length} fotos`,         done: todasFotos },
         ].map(({ label, done }) => (
           <div
             key={label}
@@ -220,13 +260,13 @@ export function ConferenciaPage() {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {epis_esperados.map((epi, i) => {
+          {subitens.map((sub, i) => {
             const status = statusMap[i];
             const foto   = fotosMap[i];
             const opt    = STATUS_OPTS.find(o => o.key === status);
             return (
               <div
-                key={i}
+                key={sub.id}
                 style={{
                   border: `1px solid ${opt ? `${opt.color}33` : 'rgba(255,255,255,0.06)'}`,
                   borderRadius: 12,
@@ -246,7 +286,10 @@ export function ConferenciaPage() {
                   >
                     {i + 1}
                   </span>
-                  <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: '#F3F4F6' }}>{epi}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: '#F3F4F6' }}>{sub.nome}</div>
+                    {sub.tamanho && <div style={{ fontSize: 11, color: '#9CA3AF' }}>Tamanho: {sub.tamanho} • Qtd: {sub.qtd}</div>}
+                  </div>
                   {status && (
                     <StatusBadge
                       variant={status === 'reaproveitavel' ? 'success' : status === 'descarte' ? 'warning' : 'danger'}
@@ -294,7 +337,7 @@ export function ConferenciaPage() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <img
                           src={foto}
-                          alt={`Foto ${epi}`}
+                          alt={`Foto ${sub.nome}`}
                           style={{ width: 72, height: 54, objectFit: 'cover', borderRadius: 8, border: '1px solid rgba(0,230,118,0.25)' }}
                         />
                         <button

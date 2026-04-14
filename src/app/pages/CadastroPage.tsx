@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router';
-import { User, CreditCard, Briefcase, FileText, Calendar, Send, CheckCircle, AlertCircle, Check, ChevronLeft, ChevronRight } from 'lucide-react';
+import { User, CreditCard, Briefcase, FileText, Calendar, Send, CheckCircle2, AlertCircle, Check, ChevronLeft, ChevronRight, ClipboardList } from 'lucide-react';
 import { CARGO_EPI_MAP, CARGOS, MOTIVOS } from '../../catalog';
 import { criarSolicitacao } from '../../api';
 import { formatCpf, validarCpf, getTecnicoFromStorage } from '../../utils';
@@ -184,59 +184,93 @@ const inputStyle: React.CSSProperties = {
 };
 
 export function CadastroPage() {
-  const navigate = useNavigate();
-  const tecnico  = getTecnicoFromStorage();
+  const navigate  = useNavigate();
+  const tecnico   = getTecnicoFromStorage();
 
   const [nome,         setNome]         = useState('');
   const [cpf,          setCpf]          = useState('');
+  const [telefone1,    setTelefone1]    = useState('');
+  const [telefone2,    setTelefone2]    = useState('');
   const [cargo,        setCargo]        = useState('');
   const [motivo,       setMotivo]       = useState('');
   const [data,         setData]         = useState(new Date().toISOString().slice(0, 10));
-  const [selectedEpis, setSelectedEpis] = useState<Set<string>>(new Set());
+  const [selectedEpis, setSelectedEpis] = useState<Record<string, { tamanho: string; qtd: number }>>({});
   const [loading,      setLoading]      = useState(false);
   const [msg,          setMsg]          = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const cargoInfo = cargo ? CARGO_EPI_MAP[cargo] : null;
   const cpfValido = validarCpf(cpf);
 
-  // Quando o cargo muda, pré-seleciona todos os EPIs automaticamente
+  // Quando o cargo muda, pré-seleciona todos os EPIs automaticamente com valores padrão
   useEffect(() => {
     if (cargoInfo) {
-      setSelectedEpis(new Set(cargoInfo.epis));
+      const initial: typeof selectedEpis = {};
+      cargoInfo.epis.forEach(e => {
+        initial[e] = { tamanho: 'M', qtd: 1 };
+      });
+      setSelectedEpis(initial);
     } else {
-      setSelectedEpis(new Set());
+      setSelectedEpis({});
     }
   }, [cargo]);
 
   function toggleEpi(epi: string) {
     setSelectedEpis(prev => {
-      const next = new Set(prev);
-      if (next.has(epi)) { next.delete(epi); } else { next.add(epi); }
+      const next = { ...prev };
+      if (next[epi]) {
+        delete next[epi];
+      } else {
+        next[epi] = { tamanho: 'M', qtd: 1 };
+      }
       return next;
     });
   }
 
+  function updateEpi(epi: string, field: 'tamanho' | 'qtd', val: string | number) {
+    setSelectedEpis(prev => ({
+      ...prev,
+      [epi]: { ...prev[epi], [field]: val }
+    }));
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!nome.trim())          { setMsg({ type: 'error', text: 'Informe o nome do colaborador.' }); return; }
-    if (!cpfValido)            { setMsg({ type: 'error', text: 'CPF inválido.' }); return; }
-    if (!cargo)                { setMsg({ type: 'error', text: 'Selecione o cargo.' }); return; }
-    if (!motivo)               { setMsg({ type: 'error', text: 'Selecione o motivo.' }); return; }
-    if (selectedEpis.size === 0) { setMsg({ type: 'error', text: 'Selecione ao menos um EPI.' }); return; }
+    if (!nome.trim()) { setMsg({ type: 'error', text: 'Informe o nome do colaborador.' }); return; }
+    if (!cpfValido)   { setMsg({ type: 'error', text: 'CPF inválido.' }); return; }
+    if (!cargo)       { setMsg({ type: 'error', text: 'Selecione o cargo.' }); return; }
+    if (!motivo)      { setMsg({ type: 'error', text: 'Selecione o motivo da ação.' }); return; }
+    if (Object.keys(selectedEpis).length === 0) {
+      setMsg({ type: 'error', text: 'Selecione ao menos um EPI/Fardamento.' }); return;
+    }
+    for (const epi in selectedEpis) {
+      if (!selectedEpis[epi].tamanho || selectedEpis[epi].qtd < 1) {
+        setMsg({ type: 'error', text: `Verifique tamanho e quantidade de: ${epi}` }); return;
+      }
+    }
 
     setLoading(true);
     setMsg(null);
     try {
+      const episPayload = Object.entries(selectedEpis).map(([nomeEpi, cfg]) => ({
+        nome:    nomeEpi,
+        tamanho: cfg.tamanho,
+        qtd:     cfg.qtd,
+      }));
+
       await criarSolicitacao({
         nome_colaborador:    nome.trim(),
         cpf,
+        telefone1:           telefone1.trim(),
+        telefone2:           telefone2.trim(),
         contrato:            cargoInfo!.contrato,
         motivo,
         data_solicitacao:    data,
-        epis_esperados:      cargoInfo!.epis.filter(e => selectedEpis.has(e)),
+        epis_esperados:      episPayload,
         tecnico_responsavel: tecnico?.nome ?? 'Desconhecido',
+        // Sem assinatura no cadastro — assinatura acontece na Conferência
       });
-      setMsg({ type: 'success', text: 'Solicitação criada com sucesso!' });
+
+      setMsg({ type: 'success', text: 'Solicitação criada com sucesso! Redirecionando...' });
       setTimeout(() => navigate('/'), 2000);
     } catch (err) {
       setMsg({ type: 'error', text: `Erro: ${(err as Error).message}` });
@@ -246,30 +280,28 @@ export function CadastroPage() {
 
   return (
     <div style={{ maxWidth: 720 }}>
+      {/* Banner informativo */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 12,
+        background: 'rgba(0,229,255,0.05)', border: '1px solid rgba(0,229,255,0.15)',
+        borderRadius: 10, padding: '10px 16px', marginBottom: 16,
+      }}>
+        <ClipboardList size={15} color="#00E5FF" />
+        <span style={{ fontSize: 12, color: '#9CA3AF' }}>
+          Esta solicitação é um <strong style={{ color: '#00E5FF' }}>registro de trabalho</strong> apenas.
+          A assinatura do colaborador será coletada no momento da <strong style={{ color: '#00E5FF' }}>Conferência</strong>.
+        </span>
+      </div>
+
       <form onSubmit={handleSubmit}>
         {/* Card principal */}
-        <div
-          style={{
-            background: 'rgba(36,40,45,0.85)',
-            backdropFilter: 'blur(12px)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: 14,
-            padding: 28,
-            marginBottom: 16,
-          }}
-        >
+        <div style={{
+          background: 'rgba(36,40,45,0.85)', backdropFilter: 'blur(12px)',
+          border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 28, marginBottom: 16,
+        }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 24 }}>
-            <div
-              style={{
-                width: 3,
-                height: 20,
-                borderRadius: 2,
-                background: 'linear-gradient(180deg, #00E5FF, rgba(0,229,255,0.50))',
-              }}
-            />
-            <span style={{ fontSize: 14, fontWeight: 600, color: '#F3F4F6' }}>
-              Dados do Colaborador
-            </span>
+            <div style={{ width: 3, height: 20, borderRadius: 2, background: 'linear-gradient(180deg, #00E5FF, rgba(0,229,255,0.50))' }} />
+            <span style={{ fontSize: 14, fontWeight: 600, color: '#F3F4F6' }}>Dados do Colaborador</span>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
@@ -312,6 +344,35 @@ export function CadastroPage() {
               {cpf.replace(/\D/g,'').length === 11 && !cpfValido && (
                 <p style={{ fontSize: 11, color: '#EF4444', marginTop: 4 }}>CPF inválido</p>
               )}
+            </Field>
+
+            {/* Telefones */}
+            <Field label="Telefone 1 (Celular)">
+              <div style={{ position: 'relative' }}>
+                <input
+                  type="text"
+                  value={telefone1}
+                  onChange={e => setTelefone1(e.target.value)}
+                  placeholder="(92) 99999-9999"
+                  style={{ ...inputStyle }}
+                  onFocus={e => { e.currentTarget.style.borderColor = 'rgba(0,229,255,0.40)'; }}
+                  onBlur={e  => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'; }}
+                />
+              </div>
+            </Field>
+
+            <Field label="Telefone 2 (Recado)">
+              <div style={{ position: 'relative' }}>
+                <input
+                  type="text"
+                  value={telefone2}
+                  onChange={e => setTelefone2(e.target.value)}
+                  placeholder="(92) 99999-9999"
+                  style={{ ...inputStyle }}
+                  onFocus={e => { e.currentTarget.style.borderColor = 'rgba(0,229,255,0.40)'; }}
+                  onBlur={e  => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'; }}
+                />
+              </div>
             </Field>
 
             {/* Data */}
@@ -387,7 +448,7 @@ export function CadastroPage() {
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
               <div style={{ width: 3, height: 20, borderRadius: 2, background: 'linear-gradient(180deg, #00E676, rgba(0,230,118,0.50))' }} />
-              <span style={{ fontSize: 14, fontWeight: 600, color: '#F3F4F6' }}>EPIs a Devolver</span>
+              <span style={{ fontSize: 14, fontWeight: 600, color: '#F3F4F6' }}>EPIs Fornecidos</span>
               <span
                 style={{
                   padding: '2px 8px', borderRadius: 20,
@@ -395,16 +456,18 @@ export function CadastroPage() {
                   fontSize: 11, fontWeight: 600,
                 }}
               >
-                {selectedEpis.size}/{cargoInfo.epis.length} selecionados
+                {Object.keys(selectedEpis).length}/{cargoInfo.epis.length} selecionados
               </span>
               {/* Selecionar / desmarcar todos */}
               <button
                 type="button"
                 onClick={() => {
-                  if (selectedEpis.size === cargoInfo.epis.length) {
-                    setSelectedEpis(new Set());
+                  if (Object.keys(selectedEpis).length === cargoInfo.epis.length) {
+                    setSelectedEpis({});
                   } else {
-                    setSelectedEpis(new Set(cargoInfo.epis));
+                    const next: typeof selectedEpis = {};
+                    cargoInfo.epis.forEach(e => next[e] = { tamanho: 'M', qtd: 1 });
+                    setSelectedEpis(next);
                   }
                 }}
                 style={{
@@ -414,47 +477,72 @@ export function CadastroPage() {
                   color: '#9CA3AF', fontSize: 11, cursor: 'pointer',
                 }}
               >
-                {selectedEpis.size === cargoInfo.epis.length ? 'Desmarcar todos' : 'Selecionar todos'}
+                {Object.keys(selectedEpis).length === cargoInfo.epis.length ? 'Desmarcar todos' : 'Selecionar todos'}
               </button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {cargoInfo.epis.map((epi) => {
-                const checked = selectedEpis.has(epi);
+                const checked = !!selectedEpis[epi];
                 return (
-                  <button
-                    key={epi}
-                    type="button"
-                    onClick={() => toggleEpi(epi)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 12,
-                      padding: '11px 14px',
-                      borderRadius: 8,
-                      background: checked ? 'rgba(0,230,118,0.08)' : 'rgba(255,255,255,0.03)',
-                      border: checked ? '1px solid rgba(0,230,118,0.25)' : '1px solid rgba(255,255,255,0.07)',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      transition: 'all 0.15s ease',
-                      width: '100%',
-                    }}
-                  >
-                    {/* Checkbox visual */}
-                    <div
+                  <div key={epi} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <button
+                      type="button"
+                      onClick={() => toggleEpi(epi)}
                       style={{
-                        width: 18, height: 18, borderRadius: 5, flexShrink: 0,
-                        border: checked ? '1px solid rgba(0,230,118,0.60)' : '1px solid rgba(255,255,255,0.20)',
-                        background: checked ? '#00E676' : 'transparent',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 12,
+                        padding: '11px 14px',
+                        borderRadius: 8,
+                        background: checked ? 'rgba(0,230,118,0.08)' : 'rgba(255,255,255,0.03)',
+                        border: checked ? '1px solid rgba(0,230,118,0.25)' : '1px solid rgba(255,255,255,0.07)',
+                        cursor: 'pointer',
+                        textAlign: 'left',
                         transition: 'all 0.15s ease',
+                        width: '100%',
                       }}
                     >
-                      {checked && <Check size={11} color="#0E1214" strokeWidth={3} />}
-                    </div>
-                    <span style={{ fontSize: 13, color: checked ? '#F3F4F6' : '#9CA3AF', fontWeight: checked ? 500 : 400 }}>
-                      {epi}
-                    </span>
-                  </button>
+                      {/* Checkbox visual */}
+                      <div
+                        style={{
+                          width: 18, height: 18, borderRadius: 5, flexShrink: 0,
+                          border: checked ? '1px solid rgba(0,230,118,0.60)' : '1px solid rgba(255,255,255,0.20)',
+                          background: checked ? '#00E676' : 'transparent',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        {checked && <Check size={11} color="#0E1214" strokeWidth={3} />}
+                      </div>
+                      <span style={{ fontSize: 13, color: checked ? '#F3F4F6' : '#9CA3AF', fontWeight: checked ? 500 : 400 }}>
+                        {epi}
+                      </span>
+                    </button>
+                    {checked && (
+                      <div style={{ display: 'flex', gap: 10, paddingLeft: 44, paddingBottom: 8 }}>
+                        <div style={{ flex: 1 }}>
+                          <label style={{ fontSize: 10, color: '#9CA3AF', marginBottom: 2, display: 'block' }}>Tamanho</label>
+                          <input 
+                            type="text" 
+                            placeholder="M, G, 40..."
+                            value={selectedEpis[epi].tamanho} 
+                            onChange={e => updateEpi(epi, 'tamanho', e.target.value.toUpperCase())}
+                            style={{ ...inputStyle, padding: '6px 10px', fontSize: 12 }} 
+                          />
+                        </div>
+                        <div style={{ width: 80 }}>
+                          <label style={{ fontSize: 10, color: '#9CA3AF', marginBottom: 2, display: 'block' }}>Qtd</label>
+                          <input 
+                            type="number" 
+                            min="1"
+                            value={selectedEpis[epi].qtd} 
+                            onChange={e => updateEpi(epi, 'qtd', Number(e.target.value))}
+                            style={{ ...inputStyle, padding: '6px 10px', fontSize: 12, textAlign: 'center' }} 
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
@@ -466,21 +554,14 @@ export function CadastroPage() {
           <div
             className="toast-slide-in"
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              padding: '12px 16px',
-              borderRadius: 10,
-              marginBottom: 16,
-              background: msg.type === 'success'
-                ? 'rgba(0,230,118,0.10)' : 'rgba(239,68,68,0.10)',
-              border: `1px solid ${msg.type === 'success'
-                ? 'rgba(0,230,118,0.25)' : 'rgba(239,68,68,0.25)'}`,
-              color: msg.type === 'success' ? '#00E676' : '#EF4444',
-              fontSize: 13,
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '12px 16px', borderRadius: 10, marginBottom: 16,
+              background: msg.type === 'success' ? 'rgba(0,230,118,0.10)' : 'rgba(239,68,68,0.10)',
+              border: `1px solid ${msg.type === 'success' ? 'rgba(0,230,118,0.25)' : 'rgba(239,68,68,0.25)'}`,
+              color: msg.type === 'success' ? '#00E676' : '#EF4444', fontSize: 13,
             }}
           >
-            {msg.type === 'success' ? <CheckCircle size={14} /> : <AlertCircle size={14} />}
+            {msg.type === 'success' ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
             {msg.text}
           </div>
         )}
@@ -491,48 +572,34 @@ export function CadastroPage() {
             type="button"
             onClick={() => navigate('/')}
             style={{
-              padding: '11px 24px',
-              borderRadius: 8,
+              padding: '11px 24px', borderRadius: 8,
               background: 'rgba(255,255,255,0.05)',
               border: '1px solid rgba(255,255,255,0.08)',
-              color: '#9CA3AF',
-              fontSize: 13,
-              fontWeight: 500,
-              cursor: 'pointer',
+              color: '#9CA3AF', fontSize: 13, fontWeight: 500, cursor: 'pointer',
             }}
           >
             Cancelar
           </button>
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || msg?.type === 'success'}
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '11px 28px',
-              borderRadius: 8,
+              flex: 1, display: 'flex', alignItems: 'center', gap: 8,
+              padding: '11px 28px', borderRadius: 8, justifyContent: 'center',
               background: 'linear-gradient(135deg, rgba(0,229,255,0.18), rgba(0,229,255,0.08))',
-              border: '1px solid rgba(0,229,255,0.35)',
-              color: '#00E5FF',
-              fontSize: 13,
-              fontWeight: 500,
-              cursor: loading ? 'not-allowed' : 'pointer',
-              opacity: loading ? 0.7 : 1,
+              border: '1px solid rgba(0,229,255,0.35)', color: '#00E5FF',
+              fontSize: 13, fontWeight: 500,
+              cursor: (loading || msg?.type === 'success') ? 'not-allowed' : 'pointer',
+              opacity: (loading || msg?.type === 'success') ? 0.7 : 1,
               transition: 'box-shadow 0.2s ease',
             }}
             onMouseEnter={e => { if (!loading) (e.currentTarget as HTMLElement).style.boxShadow = '0 0 20px rgba(0,229,255,0.35)'; }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.boxShadow = 'none'; }}
           >
-            {loading ? (
-              <span
-                className="animate-spin"
-                style={{ width: 14, height: 14, border: '2px solid #00E5FF', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block' }}
-              />
-            ) : (
-              <Send size={14} />
-            )}
-            {loading ? 'Enviando...' : 'Criar Solicitação'}
+            {loading
+              ? <span className="animate-spin" style={{ width: 14, height: 14, border: '2px solid #00E5FF', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block' }} />
+              : <Send size={14} />}
+            {loading ? 'Criando...' : msg?.type === 'success' ? 'Criado!' : 'Criar Solicitação'}
           </button>
         </div>
       </form>

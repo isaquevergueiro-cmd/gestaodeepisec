@@ -7,6 +7,7 @@ import baixaRouter from "./routes/baixa.js";
 import dashboardRouter from "./routes/dashboard.js";
 import historicoRouter from "./routes/historico.js";
 import zapsignRouter from "./routes/zapsign.js";
+import { initCronSla } from "./services/cronSla.js";
 
 const app = express();
 const PORT = process.env.PORT ?? 3001;
@@ -29,4 +30,5 @@ app.get("/api/health", (_, res) =>
 app.listen(PORT, () => {
   console.log(`\n🦺 Backend EPI Manager rodando em http://localhost:${PORT}`);
   console.log(`   Health check: http://localhost:${PORT}/api/health\n`);
+  initCronSla();
 });

@@ -14,6 +14,12 @@ const API_BAIXA  = import.meta.env.VITE_API_SALVAR_BAIXA as string;
 const API_DASH   = import.meta.env.VITE_API_DASHBOARD as string;
 const API_HIST   = import.meta.env.VITE_API_HISTORICO as string;
 
+export interface DashboardFilters {
+  mesAno?: string;
+  contrato?: string;
+  epi?: string;
+}
+
 const OFFLINE_QUEUE_KEY = 'epi_offline_queue';
 
 async function checkResponse<T>(res: Response): Promise<T> {
@@ -78,9 +84,14 @@ export async function gerarCautela(payload: SalvarBaixaPayload): Promise<Blob> {
   return res.blob();
 }
 
-export async function getDashboard(): Promise<DashboardData> {
-  const url = API_DASH || 'http://localhost:3001/api/dashboard';
-  const res = await fetch(url);
+export async function getDashboard(filters?: DashboardFilters): Promise<DashboardData> {
+  const url = new URL(API_DASH || 'http://localhost:3001/api/dashboard');
+  if (filters) {
+    if (filters.mesAno) url.searchParams.append('mesAno', filters.mesAno);
+    if (filters.contrato) url.searchParams.append('contrato', filters.contrato);
+    if (filters.epi) url.searchParams.append('epi', filters.epi);
+  }
+  const res = await fetch(url.toString());
   return checkResponse<DashboardData>(res);
 }
 

@@ -11,9 +11,19 @@ interface SearchResult {
   id_monday: string;
   nome: string;
   cpf: string;
+  telefone1?: string;
+  telefone2?: string;
+  contrato?: string;
   epis_esperados: string[];
   is_retorno?: boolean;
   epis_ja_devolvidos?: string[];
+  subitens?: {
+    id: string;
+    nome: string;
+    tamanho: string;
+    qtd: number;
+    status: string;
+  }[];
 }
 
 interface RecenteItem {
@@ -126,9 +136,13 @@ export function BuscaPage() {
           id_monday: data.id_monday,
           nome: data.nome,
           cpf: data.cpf || 'Não informado',
+          telefone1: data.telefone1,
+          telefone2: data.telefone2,
+          contrato: data.contrato,
           epis_esperados: epis,
           is_retorno: data.is_retorno ?? false,
           epis_ja_devolvidos: data.epis_ja_devolvidos ?? [],
+          subitens: data.subitens ?? [],
         };
       });
 
@@ -156,9 +170,13 @@ export function BuscaPage() {
         id_monday:          dadosBusca.id_monday,
         nome:               dadosBusca.nome,
         cpf:                dadosBusca.cpf,
+        telefone1:          dadosBusca.telefone1,
+        telefone2:          dadosBusca.telefone2,
+        contrato:           dadosBusca.contrato,
         epis_esperados:     dadosBusca.epis_esperados,
         is_retorno:         dadosBusca.is_retorno,
         epis_ja_devolvidos: dadosBusca.epis_ja_devolvidos,
+        subitens:           dadosBusca.subitens,
       };
     } else if (dadosRecente) {
       dados = {

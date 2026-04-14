@@ -6,26 +6,40 @@ const MONDAY_URL = "https://api.monday.com/v2";
 const BOARD_DEVOLUCOES = 18406415397;
 
 async function gql(query) {
-  const res = await fetch(MONDAY_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.MONDAY_API_TOKEN}`,
-      "Content-Type": "application/json",
-      "API-Version": "2024-10",
-    },
-    body: JSON.stringify({ query }),
-  });
-  return (await res.json()).data;
+  let res;
+  try {
+    res = await fetch(MONDAY_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.MONDAY_API_TOKEN}`,
+        "Content-Type": "application/json",
+        "API-Version": "2024-10",
+      },
+      body: JSON.stringify({ query }),
+    });
+  } catch (fetchErr) {
+    throw new Error(`[Dashboard] Falha de rede ao contatar Monday: ${fetchErr.message}`);
+  }
+
+  const contentType = res.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) {
+    const text = await res.text();
+    throw new Error(`[Dashboard] Monday retornou HTML em vez de JSON (status ${res.status}). Verifique o MONDAY_API_TOKEN. Resp: ${text.slice(0, 120)}`);
+  }
+
+  const json = await res.json();
+  if (json.errors?.length) {
+    const msgs = json.errors.map(e => e.message).join("; ");
+    throw new Error(`[Dashboard] GraphQL error: ${msgs}`);
+  }
+  return json.data;
 }
 
-router.get("/dashboard", async (_req, res) => {
+router.get("/dashboard", async (req, res) => {
   try {
     const data = await gql(`{
       boards(ids: [${BOARD_DEVOLUCOES}]) {
-        groups {
-          id
-          title
-        }
+        groups { id title }
         items_page(limit: 500) {
           items {
             id
@@ -33,33 +47,66 @@ router.get("/dashboard", async (_req, res) => {
             group { id }
             column_values(ids: [
               "color_mm1y6q34",
+              "color_mm1y1rf2",
               "date_mm1zythe",
               "date_mm1ys9b",
               "text_mm1yfgtm",
-              "board_relation_mm258fse",
               "text_mm1yrhrs",
-              "long_text_mm25tz9r",
-              "long_text_mm27kb2p",
-              "lookup_mm259jnj",
-              "color_mm1y1rf2"
+              "long_text_mm2chet8",
+              "text_mm1ypaa0",
+              "text_mm2c155b",
+              "text_mm2cz5hh"
             ]) {
               id
               text
               ... on StatusValue { label }
-              ... on BoardRelationValue { display_value }
-              ... on MirrorValue { display_value }
             }
           }
         }
       }
     }`);
 
+
     const board = data.boards[0];
-    const items = board.items_page.items;
+    let items = board.items_page.items;
+
+    const { mesAno, contrato, epi } = req.query;
+
+    if (contrato) {
+      const lowerContrato = contrato.toLowerCase();
+      items = items.filter(i => {
+        const cCol = i.column_values.find(c => c.id === "text_mm1ypaa0");
+        return cCol?.text && cCol.text.toLowerCase().includes(lowerContrato);
+      });
+    }
+
+    if (epi) {
+      const lowerEpi = epi.toLowerCase();
+      items = items.filter(i => {
+        const epiBase = i.column_values.find((c) => c.id === "long_text_mm2chet8")?.text || "";
+        return epiBase.toLowerCase().includes(lowerEpi);
+      });
+    }
+
+
+    if (mesAno) {
+      const [fYear, fMonth] = mesAno.split("-");
+      const targetM = parseInt(fMonth, 10) - 1;
+      const targetY = parseInt(fYear, 10);
+      items = items.filter(i => {
+        // Para pendentes usa date_mm1ys9b, para historico usa date_mm1zythe
+        const dh = i.column_values.find((c) => c.id === "date_mm1zythe")?.text;
+        const dp = i.column_values.find((c) => c.id === "date_mm1ys9b")?.text;
+        const targetDate = dh || dp;
+        if (!targetDate) return false;
+        const d = new Date(targetDate);
+        return d.getMonth() === targetM && d.getFullYear() === targetY;
+      });
+    }
 
     const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
+    const currentMonth = mesAno ? parseInt(mesAno.split("-")[1], 10) - 1 : now.getMonth();
+    const currentYear = mesAno ? parseInt(mesAno.split("-")[0], 10) : now.getFullYear();
 
     // --- Pendentes: grupo "topics" (Aguardando Devolução) + grupo_mm27y9f1 (Aguardando Retorno de Item) ---
     const GRUPOS_PENDENTES = ["topics", "group_mm27y9f1"];
@@ -85,26 +132,39 @@ router.get("/dashboard", async (_req, res) => {
     let descontos_folha = 0;
     const porTecnico = {};
     const epiFrequency = {};
+    const categoriasVisao = {
+      admissional: 0,
+      demissional: 0,
+      renovacao_com_devolucao: 0,
+      renovacao_sem_devolucao: 0,
+    };
 
     for (const item of historicoItems) {
-      // --- Por técnico ---
-      const tecnicoCol = item.column_values.find(
-        (c) => c.id === "text_mm1yfgtm"
-      );
-      const tecnico = tecnicoCol?.text?.trim();
+      const colMotivo = item.column_values.find(c => c.id === "color_mm1y1rf2");
+      const colStatus = item.column_values.find(c => c.id === "color_mm1y6q34");
+
+      // Técnico
+      const tecnicoCol = item.column_values.find((c) => c.id === "text_mm1yfgtm");
+      const tecnico    = tecnicoCol?.text?.trim();
       if (tecnico) {
         porTecnico[tecnico] = (porTecnico[tecnico] || 0) + 1;
       }
 
-      // --- Verifica se tem problema (EPIs não devolvidos relacionados) ---
-      const relCol = item.column_values.find(
-        (c) => c.id === "board_relation_mm258fse"
-      );
-      const displayValue = relCol?.display_value || relCol?.text || "";
-      
-      if (displayValue && displayValue.trim() !== "") {
+      // Categorias de Ação (Motivo)
+      const motivoStrDashboard = (colMotivo?.label || colMotivo?.text || "").toLowerCase();
+      if      (motivoStrDashboard.includes("admiss"))        categoriasVisao.admissional++;
+      else if (motivoStrDashboard.includes("demiss") || motivoStrDashboard.includes("desligamento")) categoriasVisao.demissional++;
+      else if (motivoStrDashboard.includes("com devolu"))    categoriasVisao.renovacao_com_devolucao++;
+      else if (motivoStrDashboard.includes("sem devolu"))    categoriasVisao.renovacao_sem_devolucao++;
+
+      // Status da Devolução: usar label do campo color_mm1y6q34
+      const statusDev = (colStatus?.label || colStatus?.text || "").toLowerCase();
+      const temPendencia = statusDev.includes("pend") || statusDev.includes("aguardando");
+      if (temPendencia) {
         comProblema++;
-        const names = displayValue.split(",").map((n) => n.trim()).filter(Boolean);
+        // EPI names para o gráfico: coluna long_text_mm2chet8 dos itens com pendência
+        const episCol = item.column_values.find((c) => c.id === "long_text_mm2chet8");
+        const names   = (episCol?.text || "").split(/,|\n/).map(n => n.trim()).filter(Boolean);
         for (const name of names) {
           epiFrequency[name] = (epiFrequency[name] || 0) + 1;
         }
@@ -112,79 +172,40 @@ router.get("/dashboard", async (_req, res) => {
         semProblema++;
       }
 
-      // --- Financeiro ---
-      const colMotivo = item.column_values.find(c => c.id === "color_mm1y1rf2");
-      const colValor = item.column_values.find(c => c.id === "lookup_mm259jnj");
-      
-      const valorRaw = colValor?.display_value || colValor?.text || "";
-      if (valorRaw) {
-        // Encontra todos os números na string (ex: "100.00, 50,00") e soma
-        const numbers = valorRaw.match(/[\d.,]+/g);
-        if (numbers) {
-          const sum = numbers.reduce((acc, curr) => {
-            // Se tem vírgula (formato PT-BR), troca por ponto
-            let numStr = curr;
-            if (numStr.includes(",") && !numStr.includes(".")) {
-               numStr = numStr.replace(",", ".");
-            } else if (numStr.includes(",") && numStr.includes(".")) {
-               // Formato 1.000,50 -> 1000.50
-               numStr = numStr.replace(/\./g, "").replace(",", ".");
-            }
-            return acc + (parseFloat(numStr) || 0);
-          }, 0);
-          
-          if (sum > 0) {
-            total_descontado += sum;
-            const motivoStr = (colMotivo?.label || colMotivo?.text || "").toLowerCase();
-            if (motivoStr.includes("desligamento")) {
-              descontos_rescisao += sum;
-            } else {
-              descontos_folha += sum;
-            }
-          }
-        }
-      }
+      // Financeiro (placeholder — depende de configuração do board)
+      total_descontado    = total_descontado;
+      descontos_folha     = descontos_folha;
+      descontos_rescisao  = descontos_rescisao;
     }
+
 
     // --- Pendentes list ---
     const pendentes_list = pendenteItems.map((i) => {
-      const dateCol = i.column_values.find((c) => c.id === "date_mm1ys9b");
-      const tecnicoCol = i.column_values.find((c) => c.id === "text_mm1yfgtm");
-      const cpfCol = i.column_values.find((c) => c.id === "text_mm1yrhrs");
-      const episCol = i.column_values.find((c) => c.id === "long_text_mm25tz9r");
-      
+      const col = (id) => i.column_values.find((c) => c.id === id)?.text ?? "";
+
+      const dateText = col("date_mm1ys9b");
       let formattedDate = null;
-      if (dateCol?.text) {
-        const [yyyy, mm, dd] = dateCol.text.split('-');
+      if (dateText) {
+        const [yyyy, mm, dd] = dateText.split('-');
         if (yyyy && mm && dd) formattedDate = `${dd}/${mm}/${yyyy}`;
       }
 
-      const episColBase   = i.column_values.find((c) => c.id === "long_text_mm25tz9r");
-      const episColPend   = i.column_values.find((c) => c.id === "long_text_mm27kb2p");
-      const isRetorno     = i.group.id === "group_mm27y9f1" && (episColPend?.text ?? "").trim() !== "";
-
-      // EPIs a mostrar: se retorno, usa col pendentes; senão usa col base
-      const episText   = isRetorno ? (episColPend?.text ?? "") : (episColBase?.text ?? "");
-
-      // EPIs já devolvidos anteriormente (para passar à tela de devolutiva)
-      let epis_ja_devolvidos = [];
-      if (isRetorno && (episColBase?.text ?? "").trim() !== "") {
-        const todos   = (episColBase.text ?? "").split(/,\s*|\n/).map(e => e.trim()).filter(Boolean);
-        const pendSet = new Set((episColPend.text ?? "").split(/,\s*|\n/).map(e => e.trim()).filter(Boolean));
-        epis_ja_devolvidos = todos.filter(e => !pendSet.has(e));
-      }
+      // is_retorno definido pelo grupo
+      const isRetorno = i.group.id === "group_mm27y9f1";
 
       return {
-        id: i.id,
-        nome: i.name,
-        data: formattedDate || dateCol?.text || null,
-        cpf: cpfCol?.text || "",
-        tecnico: tecnicoCol?.text || "",
-        epis_esperados: episText,
-        epis_ja_devolvidos,
-        tipo: i.group.id === "group_mm27y9f1" ? "Aguardando Retorno de Item" : "Aguardando Devolução",
+        id:         i.id,
+        nome:       i.name,
+        data:       formattedDate || dateText || null,
+        cpf:        col("text_mm1yrhrs"),
+        tecnico:    col("text_mm1yfgtm"),
+        telefone1:  col("text_mm2c155b"),
+        telefone2:  col("text_mm2cz5hh"),
+        epis_esperados: col("long_text_mm2chet8"),
+        tipo: isRetorno ? "Aguardando Retorno de Item" : "Aguardando Devolução",
       };
     });
+
 
     // --- EPIs problemáticos sorted by frequency ---
     const epis_problematicos = Object.entries(epiFrequency)
@@ -193,28 +214,27 @@ router.get("/dashboard", async (_req, res) => {
 
     // --- Historico list ---
     const historico_list = historicoItems.map((i) => {
-      const dateCol = i.column_values.find((c) => c.id === "date_mm1zythe");
-      const tecnicoCol = i.column_values.find((c) => c.id === "text_mm1yfgtm");
-      const cpfCol = i.column_values.find((c) => c.id === "text_mm1yrhrs");
-      const relCol = i.column_values.find((c) => c.id === "board_relation_mm258fse");
-      
-      const hasProblem = (relCol?.display_value || relCol?.text || "").trim() !== "";
-      
+      const col    = (id) => i.column_values.find((c) => c.id === id)?.text ?? "";
+      const colObj = (id) => i.column_values.find((c) => c.id === id) || {};
+
+      const statusDev  = colObj("color_mm1y6q34").label || col("color_mm1y6q34") || "Concluída";
+      const dateText   = col("date_mm1zythe");
       let formattedDate = null;
-      if (dateCol?.text) {
-        const [yyyy, mm, dd] = dateCol.text.split('-');
+      if (dateText) {
+        const [yyyy, mm, dd] = dateText.split('-');
         if (yyyy && mm && dd) formattedDate = `${dd}/${mm}/${yyyy}`;
       }
 
       return {
-        id: i.id,
-        nome: i.name,
-        data: formattedDate || dateCol?.text || null,
-        cpf: cpfCol?.text || "",
-        tecnico: tecnicoCol?.text || "",
-        status: hasProblem ? "Com Pendências" : "Sem Problema",
+        id:      i.id,
+        nome:    i.name,
+        data:    formattedDate || dateText || null,
+        cpf:     col("text_mm1yrhrs"),
+        tecnico: col("text_mm1yfgtm"),
+        status:  statusDev,
       };
     });
+
 
     res.json({
       pendentes,
@@ -228,6 +248,7 @@ router.get("/dashboard", async (_req, res) => {
       total_descontado,
       descontos_rescisao,
       descontos_folha,
+      categoriasVisao,
     });
   } catch (err) {
     console.error("[GET /dashboard]", err.message);

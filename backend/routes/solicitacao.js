@@ -7,11 +7,14 @@ router.post("/criar-solicitacao", async (req, res) => {
   const {
     nome_colaborador,
     cpf,
+    telefone1,
+    telefone2,
     contrato,
     motivo,
     data_solicitacao,
     epis_esperados,
     tecnico_responsavel,
+    assinatura_base64,
   } = req.body;
 
   if (
@@ -29,11 +32,14 @@ router.post("/criar-solicitacao", async (req, res) => {
     const result = await criarSolicitacao({
       nome_colaborador,
       cpf,
+      telefone1,
+      telefone2,
       contrato,
       motivo,
       data_solicitacao,
       epis_esperados,
       tecnico_responsavel,
+      assinatura_base64,
     });
     res.json(result);
   } catch (err) {

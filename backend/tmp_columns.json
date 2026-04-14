@@ -1,0 +1,74 @@
+[
+  {
+    "id": "name",
+    "title": "Name"
+  },
+  {
+    "id": "subtasks_mm1z1d5f",
+    "title": "Subelementos"
+  },
+  {
+    "id": "text_mm1yrhrs",
+    "title": "CPF"
+  },
+  {
+    "id": "text_mm1ypaa0",
+    "title": "Unidade / Contrato"
+  },
+  {
+    "id": "color_mm1y1rf2",
+    "title": "Motivo da Ação"
+  },
+  {
+    "id": "color_mm1y6q34",
+    "title": "Status da Devolução"
+  },
+  {
+    "id": "color_mm1y93j5",
+    "title": "Gera Desconto?"
+  },
+  {
+    "id": "file_mm1yms92",
+    "title": "Assinatura"
+  },
+  {
+    "id": "file_mm1y612z",
+    "title": "Evidências/Fotos"
+  },
+  {
+    "id": "text_mm1yfgtm",
+    "title": "Técnico Responsável"
+  },
+  {
+    "id": "date_mm1ys9b",
+    "title": "Data da Solicitação"
+  },
+  {
+    "id": "date_mm1zythe",
+    "title": "Data da Devolução"
+  },
+  {
+    "id": "file_mm1z1gbf",
+    "title": "Cautela Assinada"
+  },
+  {
+    "id": "long_text_mm25tz9r",
+    "title": "EPIs Esperados"
+  },
+  {
+    "id": "board_relation_mm258fse",
+    "title": "EPIs Faltantes/Avariados"
+  },
+  {
+    "id": "lookup_mm259jnj",
+    "title": "Valor Total a Descontar"
+  },
+  {
+    "id": "long_text_mm27305t",
+    "title": "Justificativas Faltantes"
+  },
+  {
+    "id": "date_mm27vzkv",
+    "title": "Prazo de Entrega"
+  }
+]

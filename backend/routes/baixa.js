@@ -10,6 +10,7 @@ router.post("/salvar-baixa", async (req, res) => {
     id_monday,
     nome,
     cpf,
+    contrato, // ⬅️ ADICIONADO AQUI: Extraindo do req.body
     epis_problema,
     assinatura_base64,
     fotos_epis,
@@ -28,6 +29,7 @@ router.post("/salvar-baixa", async (req, res) => {
       id_monday,
       nome,
       cpf,
+      contrato, // ⬅️ ADICIONADO AQUI: Passando para a função do monday.js
       epis_problema: epis_problema ?? [],
       assinatura_base64,
       fotos_epis: fotos_epis ?? [],
@@ -50,6 +52,7 @@ router.post("/salvar-baixa", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 router.post("/gerar-cautela", async (req, res) => {
   const { nome, cpf, tecnico_responsavel, epis_problema } = req.body;
 
