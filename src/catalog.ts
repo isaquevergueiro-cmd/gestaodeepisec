@@ -50,8 +50,8 @@ export const CARGOS = Object.keys(CARGO_EPI_MAP);
 
 // ⚠️ Strings devem ser idênticas aos labels da coluna color_mm1y1rf2 no Monday.
 export const MOTIVOS = [
-  'Admissional',
-  'Demissional',
-  'Renovação com devolução',
-  'Renovação sem devolução',
+  'Troca Anual',
+  'Desgaste/Avaria',
+  'Desligamento',
+  'A definir',
 ];

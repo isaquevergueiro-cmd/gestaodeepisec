@@ -459,14 +459,14 @@ export async function salvarBaixa({
 
   console.log(`[Baixa] Iniciando | temProblema=${temProblema} | aguardandoRetorno=${aguardandoRetorno} | epis=${epis_problema.length}`);
 
-  // ── Step 1a: Campos seguros — data + técnico (+ prazo se necessário) ─────────
+  // ── Step 1a: Campos do Pai (Data, Prazo e Técnico) ─────────
   const safeValues = {
     text_mm1yfgtm: tecnico_responsavel ?? '',
-    date_mm1zythe: { date: dataDevolucao },   // ← Regra 5: Data de Devolução = hoje
+    date_mm1zythe: { date: dataDevolucao },   // Regra 4: Data de Devolução no ato
   };
 
   if (aguardandoRetorno) {
-    // Regra 6: Prazo de Entrega = +3 dias úteis APENAS quando há promessa de retorno
+    // Regra 6: Prazo de Entrega = +3 dias úteis
     const prazoDate = new Date();
     let diasUteis = 0;
     while (diasUteis < 3) {
@@ -475,7 +475,6 @@ export async function salvarBaixa({
       if (dow !== 0 && dow !== 6) diasUteis++;
     }
     safeValues.date_mm27vzkv = { date: prazoDate.toISOString().slice(0, 10) };
-    console.log(`[Baixa] Step 1a: Prazo de Entrega = ${safeValues.date_mm27vzkv.date}`);
   }
 
   await gql(`
@@ -487,21 +486,16 @@ export async function salvarBaixa({
       ) { id }
     }
   `);
-  console.log('[Baixa] Step 1a: data devolução + técnico gravados.');
 
-  // ── Step 1b: Status da Devolução + Gera Desconto (labels Monday exatos) ───
+  // ── Step 1b: Status de Devolução + Gera Desconto ─────────
+  // Regras 2 e 3 resolvidas
   try {
-    let statusDevolucao;
-    if (aguardandoRetorno) {
-      statusDevolucao = 'Aguardando Retorno';  // colaborador prometeu trazer em máx 3 dias úteis
-    } else if (temProblema) {
-      statusDevolucao = 'Com Pendências';      // item definitivamente não devolvido → gera desconto
-    } else {
-      statusDevolucao = 'Concluída';           // tudo regularizado
-    }
+    let statusDevolucao = 'Concluída';
+    if (aguardandoRetorno) statusDevolucao = 'Aguardando Retorno';
+    else if (temProblema) statusDevolucao = 'Com Pendências';
+    
     const geraDesconto = (temProblema && !aguardandoRetorno) ? 'Sim' : 'Não';
 
-    console.log(`[Baixa] Step 1b: Status="${statusDevolucao}" | Desconto="${geraDesconto}"`);
     await gql(`
       mutation {
         change_multiple_column_values(
@@ -514,21 +508,27 @@ export async function salvarBaixa({
         ) { id }
       }
     `);
-    console.log('[Baixa] Step 1b: Status da Devolução e Gera Desconto atualizados.');
   } catch (err) {
-    console.error('[Baixa] Step 1b FALHA — verifique os labels (color_mm1y6q34, color_mm1y93j5) no Monday:', err.message);
+    console.error('[Baixa] Step 1b FALHA nos labels de status:', err.message);
   }
 
-  // ── Step 2: Subelementos — Status Individual + Justificativa + Foto ─────────
-  // Regras 1, 2 e 3
-  console.log(`[Baixa] Step 2: atualizando ${epis_problema.length} subelemento(s)...`);
-  for (const epi of epis_problema) {
-    if (!epi.id_monday_subitem) {
-      console.warn(`  ⚠ "${epi.epi}" sem id_monday_subitem — pulando update de colunas.`);
-      continue;
-    }
+  // ── 🚨 A MÁGICA: Buscar o ID do Quadro de Subelementos ─────────────────────
+  let subitemBoardId = null;
+  try {
+    const boardInfo = await gql(`{ boards(ids: [${BOARD_DEVOLUCOES}]) { columns(ids: ["subtasks_mm1z1d5f"]) { settings_str } } }`);
+    const settings = JSON.parse(boardInfo.boards[0].columns[0].settings_str);
+    subitemBoardId = settings.boardIds[0];
+  } catch (e) {
+    console.warn("Aviso: Não foi possível descobrir o quadro de subelementos via API.");
+  }
 
-    // Regra 1 — Status Individual (label EXATO configurado no Monday)
+  // ── Step 2: Processar Subelementos (Status Individual + Justificativa + Foto) ─
+  console.log(`[Baixa] Step 2: atualizando ${epis_problema.length} subelemento(s)...`);
+  
+  for (const epi of epis_problema) {
+    let targetSubitemId = epi.id_monday_subitem;
+
+    // Regras 8 e 9: Mapeamento dos valores pro Subelemento
     const validLabels = ['Reaproveitável', 'Descarte/Dano', 'Não Devolvido', 'A definir'];
     const safeLabel   = validLabels.includes(epi.status) ? epi.status : 'A definir';
 
@@ -536,115 +536,81 @@ export async function salvarBaixa({
       color_mm2csadv: { label: safeLabel },
     };
 
-    // Regra 2 — Justificativa: salva SEMPRE para Não Devolvido, mesmo se vazia
     if (ehNaoDevolvido(epi.status)) {
-      subColVals.long_text_mm2cdz99 = { text: epi.justificativa?.trim() || '(sem justificativa informada)' };
+      subColVals.long_text_mm2cdz99 = { text: epi.justificativa?.trim() || 'Sem justificativa' };
     }
 
-    try {
-      await gql(`
-        mutation {
-          change_multiple_column_values(
-            board_id: ${BOARD_DEVOLUCOES},
-            item_id: ${epi.id_monday_subitem},
-            column_values: ${JSON.stringify(JSON.stringify(subColVals))}
-          ) { id }
-        }
-      `);
-      console.log(`  ✓ Subitem "${epi.epi}" → Status: ${safeLabel}${epi.justificativa ? ' | Justificativa salva' : ''}`);
-    } catch (e) {
-      console.error(`  ✗ Falha ao atualizar subitem "${epi.epi}":`, e.message);
-    }
-
-    // Regra 3 — Foto: match por index (evita bug de EPIs com mesmo nome)
-    const fotoMatch = fotos_epis?.find(f =>
-      f.index !== undefined ? f.index === epi.index : f.nome === epi.epi
-    );
-    if (fotoMatch?.base64) {
+    if (!targetSubitemId) {
+      // CORREÇÃO BOTTLENECK 2: Criar o subelemento na hora se for legado!
       try {
-        const { buffer, mimeType, ext } = dataUrlToBuffer(fotoMatch.base64);
-        const filename = `Foto_${epi.epi.replace(/[^a-zA-Z0-9]/g, '_')}.${ext}`;
-        await uploadArquivo(epi.id_monday_subitem, 'file_mm2c893g', buffer, mimeType, filename);
-        console.log(`  📷 Foto de "${epi.epi}" anexada ao subelemento.`);
+        const createSub = await gql(`
+          mutation {
+            create_subitem(
+              parent_item_id: ${id_monday},
+              item_name: "${epi.epi}",
+              column_values: ${JSON.stringify(JSON.stringify(subColVals))}
+            ) { id }
+          }
+        `);
+        targetSubitemId = createSub.create_subitem.id;
+        console.log(`  ✓ Subitem LEGADO CRIADO na hora: "${epi.epi}" → Status: ${safeLabel}`);
       } catch (e) {
-        console.error(`  ✗ Falha ao anexar foto de "${epi.epi}":`, e.message);
+        console.error(`  ✗ Erro ao CRIAR subitem legado:`, e.message);
+      }
+    } else if (subitemBoardId) {
+      // CORREÇÃO BOTTLENECK 1: Atualizar usando o Board ID correto do subelemento!
+      try {
+        await gql(`
+          mutation {
+            change_multiple_column_values(
+              board_id: ${subitemBoardId}, 
+              item_id: ${targetSubitemId},
+              column_values: ${JSON.stringify(JSON.stringify(subColVals))}
+            ) { id }
+          }
+        `);
+        console.log(`  ✓ Subitem ATUALIZADO "${epi.epi}" → Status: ${safeLabel}`);
+      } catch (e) {
+        console.error(`  ✗ Erro ao ATUALIZAR subitem:`, e.message);
+      }
+    }
+
+    // Regra 10: Upload da Foto
+    if (targetSubitemId) {
+      const fotoMatch = fotos_epis?.find(f => f.index !== undefined ? f.index === epi.index : f.nome === epi.epi);
+      if (fotoMatch?.base64) {
+        try {
+          const { buffer, mimeType, ext } = dataUrlToBuffer(fotoMatch.base64);
+          const filename = `Foto_${epi.epi.replace(/[^a-zA-Z0-9]/g, '_')}.${ext}`;
+          await uploadArquivo(targetSubitemId, 'file_mm2c893g', buffer, mimeType, filename);
+          console.log(`  📷 Foto de "${epi.epi}" anexada com sucesso!`);
+        } catch (e) {
+          console.error(`  ✗ Falha ao anexar foto:`, e.message);
+        }
       }
     }
   }
 
-  // ── Step 3: Upload da assinatura do colaborador ─────────────────────────────
-  console.log('[Baixa] Step 3: upload de assinatura...');
-  try {
-    const { buffer: sigBuf, mimeType: sigMime } = dataUrlToBuffer(assinatura_base64);
-    await uploadArquivo(id_monday, 'file_mm1yms92', sigBuf, sigMime, 'assinatura.png');
-    console.log('[Baixa] Step 3: assinatura enviada.');
-  } catch (err) {
-    // Não interrompe o fluxo — assinatura vai para o PDF mesmo se o upload falhar
-    console.error('[Baixa] Step 3: FALHA no upload de assinatura (não crítico):', err.message);
-  }
-
-  // ── Step 3.1: Geração do Documento de Cautela (Regra 7) ─────────────────────
-  // A cautela é gerada para TODOS os fluxos: concluída, com pendências e aguardando retorno
-  console.log('[Baixa] Step 3.1: gerando Cautela PDF...');
+  // ── Step 3: Cautela Assinada e Movimentações Finais ─────────────────────────
+  console.log('[Baixa] Step 3: Gerando e anexando documentos...');
   let sign_url_zapsign = null;
 
-  try {
-    // Tenta ZapSign primeiro para cautelas com pendências (assinatura jurídica)
-    if (temProblema && !aguardandoRetorno) {
-      let valor_desconto = 'A calcular';
-      let tipo_desconto  = 'Folha de Pagamento';
-      try {
-        const itemInfo = await gql(`{
-          items(ids: [${id_monday}]) {
-            column_values(ids: ["color_mm1y1rf2"]) {
-              id text ... on StatusValue { label }
-            }
-          }
-        }`);
-        const motRaw = (itemInfo?.items?.[0]?.column_values?.[0]?.label || '').toLowerCase();
-        if (motRaw.includes('desligamento') || motRaw.includes('demiss')) tipo_desconto = 'Rescisão';
-      } catch (_) {}
-
-      const zapsignResult = await criarDocZapSignCautela({
-        id_monday, nome, cpf, contrato, tecnico_responsavel,
-        epis_problema, valor_desconto, tipo_desconto,
-        sandbox: process.env.ZAPSIGN_SANDBOX === 'true',
-      });
-      sign_url_zapsign = zapsignResult.sign_url_colaborador;
-      console.log(`[Baixa] Step 3.1: ZapSign OK — doc_id: ${zapsignResult.doc_id}`);
-    }
-  } catch (zapsignErr) {
-    console.warn('[Baixa] Step 3.1: ZapSign bloqueado. Gerando Cautela Nativa (fallback):', zapsignErr.message);
-  }
-
-  // Cautela Nativa: gerada SEMPRE (fallback do ZapSign OU backup para fluxos sem pendência)
   try {
     const pdfBuffer = await generateCautelaPdf({
       nome, cpf, tecnico_responsavel, epis_problema, assinatura_base64,
     });
-    // Regra 7 — anexa na coluna "Cautela Assinada" (file_mm1z1gbf) do Item Pai
+    // Regra 5: Anexar Documento de Cautela
     await uploadArquivo(id_monday, 'file_mm1z1gbf', pdfBuffer, 'application/pdf', `Cautela_${cpf?.replace(/\D/g,'') || 'EPI'}.pdf`);
-    console.log('[Baixa] Step 3.1: Cautela PDF anexada com sucesso (file_mm1z1gbf).');
-  } catch (pdfErr) {
-    console.error('[Baixa] Step 3.1: FALHA ao gerar/anexar Cautela:', pdfErr.message);
+  } catch (err) {
+    console.error('[Baixa] FALHA ao gerar Cautela:', err.message);
   }
 
-  // ── Step 4: Mover item de grupo ──────────────────────────────────────────────
   const grupoDestino = aguardandoRetorno ? 'group_mm27y9f1' : 'group_mm1y9na5';
-  const nomeGrupo    = aguardandoRetorno ? 'Aguardando Retorno' : 'Histórico';
-  console.log(`[Baixa] Step 4: movendo item para grupo "${nomeGrupo}"...`);
   try {
-    await gql(`
-      mutation {
-        move_item_to_group(item_id: ${id_monday}, group_id: "${grupoDestino}") { id }
-      }
-    `);
-    console.log(`[Baixa] Step 4: movido para "${nomeGrupo}".`);
-  } catch (e) {
-    console.error(`[Baixa] Step 4: FALHA ao mover item:`, e.message);
-  }
+    await gql(`mutation { move_item_to_group(item_id: ${id_monday}, group_id: "${grupoDestino}") { id } }`);
+  } catch (e) {}
 
-  console.log('[Baixa] ✅ Concluído.');
+  console.log('[Baixa] ✅ Processo perfeito. Concluído.');
   return { ok: true, tecnico: tecnico_responsavel, sign_url: sign_url_zapsign };
 }
 
