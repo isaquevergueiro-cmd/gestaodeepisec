@@ -2,20 +2,13 @@ import { Outlet, useNavigate } from 'react-router';
 import { useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
-import { syncOfflineQueue } from '../api';
 
-const INACTIVITY_MS = 10 * 60 * 1000; // 10 min
+const INACTIVITY_MS = 15 * 60 * 1000; // 15 minutos
 
 export function Root() {
   const navigate = useNavigate();
 
-  // Sincroniza fila offline a cada 30s
-  useEffect(() => {
-    const interval = setInterval(() => syncOfflineQueue(), 30_000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Timeout de inatividade
+  // Auto-logout por inatividade
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
 
@@ -28,21 +21,28 @@ export function Root() {
     }
 
     const events = ['mousemove', 'keydown', 'pointerdown', 'touchstart', 'scroll'];
-    events.forEach(e => window.addEventListener(e, resetTimer, { passive: true }));
+    events.forEach((e) => window.addEventListener(e, resetTimer, { passive: true }));
     resetTimer();
 
     return () => {
       clearTimeout(timer);
-      events.forEach(e => window.removeEventListener(e, resetTimer));
+      events.forEach((e) => window.removeEventListener(e, resetTimer));
     };
   }, [navigate]);
 
   return (
-    <div style={{ display: 'flex', background: '#121619', minHeight: '100vh' }}>
+    <div style={{ display: 'flex', background: '#0E1214', minHeight: '100vh' }}>
       <Sidebar />
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowX: 'hidden', minWidth: 0 }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <Header />
-        <main style={{ flex: 1, padding: '28px 32px', overflowY: 'auto' }}>
+        <main
+          style={{
+            flex: 1,
+            padding: '28px 32px',
+            overflowY: 'auto',
+            overflowX: 'hidden',
+          }}
+        >
           <Outlet />
         </main>
       </div>

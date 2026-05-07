@@ -2,12 +2,9 @@ import { useNavigate, useLocation } from 'react-router';
 import {
   ShieldCheck,
   LayoutDashboard,
-  Plus,
-  Search,
-  History,
-  Bell,
-  ChevronRight,
+  ClipboardList,
   LogOut,
+  ChevronRight,
 } from 'lucide-react';
 import { getTecnicoFromStorage } from '../../utils';
 
@@ -15,26 +12,20 @@ interface NavItem {
   icon: React.ElementType;
   label: string;
   path: string;
-  badge?: number;
-  alert?: boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { icon: LayoutDashboard, label: 'Dashboard',          path: '/'          },
-  { icon: Plus,            label: 'Nova Solicitação',   path: '/cadastro'  },
-  { icon: Search,          label: 'Busca Colaborador',  path: '/busca'     },
-  { icon: History,         label: 'Histórico',          path: '/historico' },
-  { icon: Bell,            label: 'Notificações',       path: '/notificacoes', badge: 3, alert: true },
+  { icon: LayoutDashboard, label: 'Gestão de EPIs', path: '/gestao'   },
+  { icon: ClipboardList,   label: 'Admissão',       path: '/admissao' },
 ];
 
 export function Sidebar() {
-  const navigate  = useNavigate();
-  const location  = useLocation();
-  const tecnico   = getTecnicoFromStorage();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const tecnico  = getTecnicoFromStorage();
 
   function isActive(path: string) {
-    if (path === '/') return location.pathname === '/';
-    return location.pathname.startsWith(path);
+    return location.pathname === path || location.pathname.startsWith(path + '/');
   }
 
   function handleLogout() {
@@ -45,148 +36,126 @@ export function Sidebar() {
   return (
     <aside
       style={{
-        width: 260,
-        minWidth: 260,
-        background: '#0E1214',
-        borderRight: '1px solid rgba(255,255,255,0.06)',
-        display: 'flex',
-        flexDirection: 'column',
+        width: 236,
+        minWidth: 236,
         height: '100vh',
         position: 'sticky',
         top: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        background: '#0A0D0F',
+        borderRight: '1px solid rgba(255,255,255,0.06)',
         overflowY: 'auto',
       }}
     >
       {/* Logo */}
-      <div style={{ padding: '20px 20px 16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ padding: '22px 20px 18px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
           <div
             style={{
-              width: 38,
-              height: 38,
+              width: 36,
+              height: 36,
               borderRadius: 10,
-              background: 'linear-gradient(135deg, rgba(0,229,255,0.13), rgba(0,229,255,0.27))',
-              border: '1px solid rgba(0,229,255,0.33)',
+              background: 'linear-gradient(135deg, rgba(0,229,255,0.15), rgba(0,229,255,0.30))',
+              border: '1px solid rgba(0,229,255,0.35)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
+              flexShrink: 0,
             }}
           >
-            <ShieldCheck size={20} color="#00E5FF" />
+            <ShieldCheck size={18} color="#00E5FF" />
           </div>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: '#F3F4F6', letterSpacing: '-0.2px' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#F3F4F6', letterSpacing: '-0.2px' }}>
               EPI Manager
             </div>
-            <div style={{ fontSize: 11, color: '#6B7280', marginTop: 1 }}>SESMT v2.0</div>
+            <div style={{ fontSize: 10, color: '#4B5563', marginTop: 1, letterSpacing: '0.4px' }}>
+              SESMT · v2.0
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Divisor */}
-      <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '0 20px' }} />
+      {/* Divider */}
+      <div style={{ height: 1, background: 'rgba(255,255,255,0.05)', margin: '0 16px' }} />
 
-      {/* Seção principal */}
-      <nav style={{ padding: '16px 12px', flex: 1 }}>
-        <div
+      {/* Nav */}
+      <nav style={{ flex: 1, padding: '14px 10px' }}>
+        <p
           style={{
-            fontSize: 10,
-            fontWeight: 600,
-            letterSpacing: '1.2px',
+            fontSize: 9,
+            fontWeight: 700,
+            letterSpacing: '1.4px',
             textTransform: 'uppercase',
-            color: '#4B5563',
+            color: '#374151',
             padding: '0 8px',
             marginBottom: 8,
           }}
         >
-          Menu Principal
-        </div>
+          Operações
+        </p>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {NAV_ITEMS.map(({ icon: Icon, label, path, badge, alert }) => {
+          {NAV_ITEMS.map(function({ icon: Icon, label, path }) {
             const active = isActive(path);
+            const navBorder = active ? '1px solid rgba(0,229,255,0.20)' : '1px solid transparent';
+            const navBorderLeft = active ? '2px solid #00E5FF' : '2px solid transparent';
+            const navBg = active ? 'linear-gradient(90deg, rgba(0,229,255,0.12), rgba(0,229,255,0.02))' : 'transparent';
+            const navPadLeft = active ? '9px' : '10px';
+            const iconColor = active ? '#00E5FF' : '#4B5563';
+            const labelWeight = active ? 600 : 400;
+            const labelColor = active ? '#F0F2F5' : '#6B7280';
+            const btnStyle: React.CSSProperties = {
+              display: 'flex', alignItems: 'center', gap: 10,
+              width: '100%', padding: '9px 10px', borderRadius: 9,
+              border: navBorder, borderLeft: navBorderLeft, background: navBg,
+              cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s ease',
+              paddingLeft: navPadLeft,
+            };
+            const labelStyle: React.CSSProperties = {
+              flex: 1, fontSize: 13, fontWeight: labelWeight, color: labelColor,
+            };
             return (
               <button
                 key={path}
-                onClick={() => navigate(path)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: '10px 12px',
-                  borderRadius: 10,
-                  border: active ? '1px solid rgba(0,229,255,0.20)' : '1px solid transparent',
-                  background: active
-                    ? 'linear-gradient(90deg, rgba(0,229,255,0.12), rgba(0,229,255,0.04))'
-                    : 'transparent',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                  width: '100%',
-                  textAlign: 'left',
+                onClick={function() { navigate(path); }}
+                style={btnStyle}
+                onMouseEnter={function(e) {
+                  if (!active)
+                    (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.04)';
                 }}
-                onMouseEnter={e => {
-                  if (!active) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.04)';
-                }}
-                onMouseLeave={e => {
-                  if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent';
+                onMouseLeave={function(e) {
+                  if (!active)
+                    (e.currentTarget as HTMLElement).style.background = 'transparent';
                 }}
               >
-                <Icon
-                  size={16}
-                  color={active ? '#00E5FF' : alert ? '#EF4444' : '#6B7280'}
-                />
-                <span
-                  style={{
-                    flex: 1,
-                    fontSize: 13,
-                    fontWeight: active ? 500 : 400,
-                    color: active ? '#F3F4F6' : '#9CA3AF',
-                  }}
-                >
-                  {label}
-                </span>
-                {badge != null && (
-                  <span
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 600,
-                      padding: '1px 7px',
-                      borderRadius: 20,
-                      background: active
-                        ? '#00E5FF'
-                        : alert
-                        ? 'rgba(239,68,68,0.20)'
-                        : '#374151',
-                      color: active ? '#0E1214' : alert ? '#EF4444' : '#9CA3AF',
-                    }}
-                  >
-                    {badge}
-                  </span>
-                )}
-                {active && !badge && <ChevronRight size={14} color="#00E5FF" />}
+                <Icon size={15} color={iconColor} />
+                <span style={labelStyle}>{label}</span>
+                {active && <ChevronRight size={13} color="#00E5FF" />}
               </button>
             );
           })}
         </div>
       </nav>
 
-      {/* Divisor + user card */}
-      <div style={{ padding: '0 12px 20px' }}>
-        <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', marginBottom: 16 }} />
+      {/* Divider + User card */}
+      <div style={{ padding: '0 10px 18px' }}>
+        <div style={{ height: 1, background: 'rgba(255,255,255,0.05)', marginBottom: 14 }} />
 
         <div
           style={{
-            background: 'rgba(255,255,255,0.04)',
-            border: '1px solid rgba(255,255,255,0.07)',
-            borderRadius: 12,
-            padding: 16,
+            background: 'rgba(255,255,255,0.03)',
+            border: '1px solid rgba(255,255,255,0.06)',
+            borderRadius: 10,
+            padding: '12px 14px',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 10 }}>
             <div
               style={{
-                width: 32,
-                height: 32,
+                width: 30,
+                height: 30,
                 borderRadius: '50%',
                 background: 'linear-gradient(135deg, #00E5FF, #00E676)',
                 display: 'flex',
@@ -194,18 +163,18 @@ export function Sidebar() {
                 justifyContent: 'center',
                 fontSize: 11,
                 fontWeight: 700,
-                color: '#0E1214',
+                color: '#0A0D0F',
                 flexShrink: 0,
               }}
             >
-              {tecnico?.nome?.charAt(0) ?? 'T'}
+              {tecnico?.nome?.charAt(0).toUpperCase() ?? 'T'}
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div
                 style={{
                   fontSize: 12,
                   fontWeight: 500,
-                  color: '#F3F4F6',
+                  color: '#E5E7EB',
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
@@ -213,7 +182,7 @@ export function Sidebar() {
               >
                 {tecnico?.nome ?? 'Técnico'}
               </div>
-              <div style={{ fontSize: 11, color: '#6B7280' }}>SESMT</div>
+              <div style={{ fontSize: 10, color: '#4B5563' }}>SESMT</div>
             </div>
           </div>
 
@@ -222,26 +191,26 @@ export function Sidebar() {
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 8,
+              gap: 7,
               width: '100%',
-              padding: '7px 10px',
-              borderRadius: 8,
-              background: 'rgba(239,68,68,0.08)',
-              border: '1px solid rgba(239,68,68,0.20)',
+              padding: '6px 10px',
+              borderRadius: 7,
+              background: 'rgba(239,68,68,0.07)',
+              border: '1px solid rgba(239,68,68,0.18)',
               color: '#EF4444',
               fontSize: 12,
               fontWeight: 500,
               cursor: 'pointer',
-              transition: 'all 0.2s ease',
+              transition: 'background 0.15s',
             }}
-            onMouseEnter={e => {
-              (e.currentTarget as HTMLElement).style.background = 'rgba(239,68,68,0.15)';
+            onMouseEnter={function(e) {
+              (e.currentTarget as HTMLElement).style.background = 'rgba(239,68,68,0.14)';
             }}
-            onMouseLeave={e => {
-              (e.currentTarget as HTMLElement).style.background = 'rgba(239,68,68,0.08)';
+            onMouseLeave={function(e) {
+              (e.currentTarget as HTMLElement).style.background = 'rgba(239,68,68,0.07)';
             }}
           >
-            <LogOut size={13} />
+            <LogOut size={12} />
             Sair do sistema
           </button>
         </div>

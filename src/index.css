@@ -1,5 +1,51 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
 @import "tailwindcss";
 
+/* ============================================================
+   DESIGN TOKENS
+   ============================================================ */
+:root {
+  /* Backgrounds */
+  --bg-base:      #0E1214;
+  --bg-surface-1: #141920;
+  --bg-surface-2: #1A2028;
+  --bg-surface-3: #222A34;
+
+  /* Borders */
+  --border-xs:  rgba(255,255,255,0.05);
+  --border-sm:  rgba(255,255,255,0.08);
+  --border-md:  rgba(255,255,255,0.12);
+  --border-lg:  rgba(255,255,255,0.18);
+
+  /* Text */
+  --text-hi:    #F3F4F6;
+  --text-md:    #D1D5DB;
+  --text-lo:    #9CA3AF;
+  --text-muted: #6B7280;
+  --text-faint: #4B5563;
+
+  /* Accent */
+  --accent:     #579BFC;
+  --accent-bg:  rgba(87,155,252,0.10);
+  --accent-bdr: rgba(87,155,252,0.30);
+
+  /* Semantic */
+  --success:    #00C875;
+  --warning:    #FDAB3D;
+  --danger:     #E2445C;
+  --danger-s:   #FF7575;
+  --purple:     #A25DDC;
+
+  /* Elevation (box-shadow) */
+  --shadow-sm:  0 1px 3px rgba(0,0,0,0.4);
+  --shadow-md:  0 4px 16px rgba(0,0,0,0.5);
+  --shadow-lg:  0 12px 40px rgba(0,0,0,0.65);
+}
+
+/* ============================================================
+   RESET & BASE
+   ============================================================ */
 *,
 *::before,
 *::after {
@@ -12,56 +58,102 @@ html,
 body,
 #root {
   height: 100%;
-  font-family: 'Inter', sans-serif;
-  background: #121619;
+  font-family: 'Inter', system-ui, sans-serif;
+  background: #0E1214;
   color: #F3F4F6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   color-scheme: dark;
 }
 
-/* Scrollbar customizada */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.02);
-}
-::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.10);
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 229, 255, 0.30);
-}
+/* ============================================================
+   SCROLLBAR
+   ============================================================ */
+::-webkit-scrollbar        { width: 5px; height: 5px; }
+::-webkit-scrollbar-track  { background: rgba(255,255,255,0.02); }
+::-webkit-scrollbar-thumb  { background: rgba(255,255,255,0.09); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0,229,255,0.28); }
 
+/* ============================================================
+   ELEMENTS
+   ============================================================ */
 input,
 textarea,
 select {
-  font-family: 'Inter', sans-serif;
+  font-family: inherit;
   outline: none;
+  color-scheme: dark;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
 
 button {
   cursor: pointer;
-  font-family: 'Inter', sans-serif;
-  border: none;
-  background: none;
+  font-family: inherit;
 }
 
-@keyframes slideIn {
-  from { opacity: 0; transform: translateX(20px); }
-  to   { opacity: 1; transform: translateX(0); }
+/* ============================================================
+   ANIMATIONS
+   ============================================================ */
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -800px 0; }
+  100% { background-position: 800px 0; }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes toastSlideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1);    }
+}
+
+/* Animação só com opacity — usar transform aqui cria um containing-block
+   que quebra position:fixed em filhos (dropdowns, drawers). */
+@keyframes pageSlideUp {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ============================================================
+   UTILITY CLASSES
+   ============================================================ */
+.pulse-dot {
+  animation: pulseDot 2s ease-in-out infinite;
+}
+
+.skeleton {
+  background: linear-gradient(90deg,
+    rgba(255,255,255,0.04) 25%,
+    rgba(255,255,255,0.08) 50%,
+    rgba(255,255,255,0.04) 75%
+  );
+  background-size: 800px 100%;
+  animation: shimmer 1.6s infinite;
+  border-radius: 4px;
+}
+
+.page-slide-up {
+  animation: pageSlideUp 0.2s ease-out both;
+  min-height: 100%;
 }
 
 .toast-slide-in {
-  animation: slideIn 0.25s ease forwards;
-}
-
-.sig-canvas {
-  touch-action: none;
-  border-radius: 10px;
-  display: block;
-  width: 100%;
+  animation: toastSlideIn 0.22s ease-out both;
 }

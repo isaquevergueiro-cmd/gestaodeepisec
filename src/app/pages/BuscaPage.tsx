@@ -1,583 +1,555 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState, useRef, KeyboardEvent } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
-import { Search, QrCode, X, Clock, ArrowRight, User, AlertCircle } from 'lucide-react';
-import { buscarPorCpf, buscarPorNome, getDashboard } from '../../api';
+import {
+  Search,
+  User,
+  Package,
+  Check,
+  RotateCcw,
+  Repeat2,
+  Loader2,
+  AlertCircle,
+  ChevronRight,
+} from 'lucide-react';
+import { buscarColaborador } from '../../api';
+import { extractErrorMessage } from '../../api';
+import { useColaborador } from '../contexts/ColaboradorContext';
+import { StatusBadge } from '../components/StatusBadge';
 import { formatCpf, validarCpf } from '../../utils';
-import type { ConferenciaData } from '../../types';
+import type { EpiSubitem, EpiStatus } from '../../types';
 
-const HISTORY_KEY = 'epi_busca_history';
-
-interface SearchResult {
-  id_monday: string;
-  nome: string;
-  cpf: string;
-  telefone1?: string;
-  telefone2?: string;
-  contrato?: string;
-  epis_esperados: string[];
-  is_retorno?: boolean;
-  epis_ja_devolvidos?: string[];
-  subitens?: {
-    id: string;
-    nome: string;
-    tamanho: string;
-    qtd: number;
-    status: string;
-  }[];
-}
-
-interface RecenteItem {
-  id: string;
-  nome: string;
-  cpf: string;
-  epis_esperados: string;
-  data: string | null;
-}
+// Quais status permitem ações no balcão
+const PODE_ENTREGAR: EpiStatus[] = ['Pendente de Receber'];
+const PODE_DEVOLVER: EpiStatus[] = ['Entregue', 'Aguardando Devolução'];
 
 export function BuscaPage() {
-  const navigate = useNavigate();
-  const [searchMode, setSearchMode] = useState<'cpf' | 'nome'>('cpf');
-  const [cpf,      setCpf]      = useState('');
-  const [nome,     setNome]     = useState('');
-  const [loading,  setLoading]  = useState(false);
-  const [error,    setError]    = useState('');
-  const [results,  setResults]  = useState<SearchResult[]>([]);
-  const [result,   setResult]   = useState<SearchResult | null>(null);
-  const [history,  setHistory]  = useState<string[]>([]);
-  const [recentes, setRecentes] = useState<RecenteItem[]>([]);
-  const [qrActive, setQrActive] = useState(false);
-  const qrRef = useRef<HTMLDivElement>(null);
-  const scannerRef = useRef<InstanceType<typeof import('html5-qrcode').Html5Qrcode> | null>(null);
+  const [cpfDisplay, setCpfDisplay] = useState('');   // formatado ex: 123.456.789-00
+  const [cpfSearch, setCpfSearch]   = useState('');   // dígitos puros enviados
+  const [inputError, setInputError] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    try {
-      const stored = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]');
-      setHistory(Array.isArray(stored) ? stored : []);
-    } catch { setHistory([]); }
+  const navigate      = useNavigate();
+  const { setColaborador } = useColaborador();
 
-    getDashboard().then(data => {
-      const recentesFormatados = data.pendentes_list.slice(0, 5).map(item => ({
-        id: item.id,
-        nome: item.nome,
-        cpf: item.cpf || '',
-        epis_esperados: item.epis_esperados || '',
-        data: item.data || null
-      }));
-      setRecentes(recentesFormatados); // Últimas 5 solicitacoes
-    }).catch(() => {});
-  }, []);
+  // ─── Query ─────────────────────────────────────────────────
+  const { data, isLoading, isFetching, error, isSuccess } = useQuery({
+    queryKey: ['colaborador', cpfSearch],
+    queryFn: async () => {
+      const result = await buscarColaborador(cpfSearch);
+      setColaborador(result);
+      return result;
+    },
+    enabled: cpfSearch.length === 11,
+    retry: false,
+    staleTime: 60_000,
+  });
 
-  useEffect(() => {
-    if (!qrActive) return;
-    let scanner: typeof scannerRef.current;
-
-    import('html5-qrcode').then(({ Html5Qrcode }) => {
-      scanner = new Html5Qrcode('qr-reader');
-      scannerRef.current = scanner;
-      scanner.start(
-        { facingMode: 'environment' },
-        { fps: 10, qrbox: 220 },
-        (decoded) => {
-          stopScanner();
-          const cpfFound = decoded.replace(/\D/g, '').slice(0, 11);
-          setCpf(formatCpf(cpfFound));
-          handleSearch(cpfFound);
-        },
-        () => {},
-      ).catch(() => setError('Não foi possível acessar a câmera.'));
-    });
-
-    return () => { stopScanner(); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [qrActive]);
-
-  function stopScanner() {
-    scannerRef.current?.stop().catch(() => {}).finally(() => {
-      scannerRef.current = null;
-      setQrActive(false);
-    });
+  // ─── Handlers ──────────────────────────────────────────────
+  function handleCpfChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const formatted = formatCpf(e.target.value);
+    setCpfDisplay(formatted);
+    setInputError('');
+    // Se CPF foi limpo, reseta a query
+    if (formatted.replace(/\D/g, '').length < 11) setCpfSearch('');
   }
 
-  async function handleSearch(rawCpf?: string) {
-    let target = '';
-    if (searchMode === 'cpf') {
-      target = rawCpf ?? cpf.replace(/\D/g, '');
-      if (!validarCpf(target)) { setError('CPF inválido.'); return; }
-    } else {
-      target = nome.trim();
-      if (target.length < 3) { setError('Digite pelo menos 3 letras.'); return; }
-    }
-
-    setLoading(true);
-    setError('');
-    setResult(null);
-    setResults([]);
-    try {
-      let dataList: any[] = [];
-      if (searchMode === 'cpf') {
-        dataList = await buscarPorCpf(formatCpf(target));
-        // Salva histórico de CPF
-        const cpfFmt = formatCpf(target);
-        const newHistory = [cpfFmt, ...history.filter(h => h !== cpfFmt)].slice(0, 5);
-        setHistory(newHistory);
-        localStorage.setItem(HISTORY_KEY, JSON.stringify(newHistory));
-      } else {
-        dataList = await buscarPorNome(target);
-      }
-
-      const resList: SearchResult[] = dataList.map((data: any) => {
-        const epis = data.epis_esperados_string
-          ? data.epis_esperados_string
-              .split(/\n|,\s*/)
-              .map((e: string) => e.trim())
-              .filter(Boolean)
-          : [];
-        return {
-          id_monday: data.id_monday,
-          nome: data.nome,
-          cpf: data.cpf || 'Não informado',
-          telefone1: data.telefone1,
-          telefone2: data.telefone2,
-          contrato: data.contrato,
-          epis_esperados: epis,
-          is_retorno: data.is_retorno ?? false,
-          epis_ja_devolvidos: data.epis_ja_devolvidos ?? [],
-          subitens: data.subitens ?? [],
-        };
-      });
-
-      if (resList.length === 1) {
-        setResult(resList[0]);
-      } else {
-        setResults(resList);
-      }
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function selecionarResultado(res: SearchResult) {
-    setResult(res);
-    setResults([]);
-  }
-
-  function iniciarConferencia(dadosBusca?: SearchResult, dadosRecente?: RecenteItem) {
-    let dados: ConferenciaData;
-    if (dadosBusca) {
-      dados = {
-        id_monday:          dadosBusca.id_monday,
-        nome:               dadosBusca.nome,
-        cpf:                dadosBusca.cpf,
-        telefone1:          dadosBusca.telefone1,
-        telefone2:          dadosBusca.telefone2,
-        contrato:           dadosBusca.contrato,
-        epis_esperados:     dadosBusca.epis_esperados,
-        is_retorno:         dadosBusca.is_retorno,
-        epis_ja_devolvidos: dadosBusca.epis_ja_devolvidos,
-        subitens:           dadosBusca.subitens,
-      };
-    } else if (dadosRecente) {
-      dados = {
-        id_monday:      dadosRecente.id,
-        nome:           dadosRecente.nome,
-        cpf:            dadosRecente.cpf,
-        epis_esperados: dadosRecente.epis_esperados.split(',').map(e => e.trim()).filter(Boolean),
-      };
-    } else {
+  function handleSearch() {
+    const digits = cpfDisplay.replace(/\D/g, '');
+    if (!validarCpf(digits)) {
+      setInputError('CPF inválido. Verifique os dígitos.');
       return;
     }
-    
-    if (dados.is_retorno) {
-      navigate('/devolutiva', { state: dados });
-    } else {
-      navigate('/conferencia', { state: dados });
-    }
+    setCpfSearch(digits);
   }
 
-  return (
-    <div style={{ maxWidth: 640 }}>
-      {/* Card de busca */}
-      <div
-        style={{
-          background: 'rgba(36,40,45,0.85)',
-          backdropFilter: 'blur(12px)',
-          border: '1px solid rgba(255,255,255,0.08)',
-          borderRadius: 14,
-          padding: 28,
-          marginBottom: 16,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-          <div style={{ width: 3, height: 20, borderRadius: 2, background: 'linear-gradient(180deg, #00E5FF, rgba(0,229,255,0.50))' }} />
-          <span style={{ fontSize: 14, fontWeight: 600, color: '#F3F4F6' }}>Busca</span>
-          <div style={{ display: 'flex', marginLeft: 'auto', background: 'rgba(255,255,255,0.05)', borderRadius: 8, padding: 4 }}>
-            <button
-              onClick={() => { setSearchMode('cpf'); setResult(null); setResults([]); setError(''); }}
-              style={{
-                padding: '4px 12px',
-                borderRadius: 6,
-                fontSize: 12,
-                fontWeight: searchMode === 'cpf' ? 600 : 400,
-                color: searchMode === 'cpf' ? '#00E5FF' : '#9CA3AF',
-                background: searchMode === 'cpf' ? 'rgba(0,229,255,0.1)' : 'transparent',
-                cursor: 'pointer',
-                border: 'none',
-              }}
-            >
-              CPF
-            </button>
-            <button
-              onClick={() => { setSearchMode('nome'); setResult(null); setResults([]); setError(''); setQrActive(false); }}
-              style={{
-                padding: '4px 12px',
-                borderRadius: 6,
-                fontSize: 12,
-                fontWeight: searchMode === 'nome' ? 600 : 400,
-                color: searchMode === 'nome' ? '#00E5FF' : '#9CA3AF',
-                background: searchMode === 'nome' ? 'rgba(0,229,255,0.1)' : 'transparent',
-                cursor: 'pointer',
-                border: 'none',
-              }}
-            >
-              Nome
-            </button>
-          </div>
-        </div>
+  function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter') handleSearch();
+  }
 
-        {/* Input */}
-        <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+  function handleClear() {
+    setCpfDisplay('');
+    setCpfSearch('');
+    setInputError('');
+    setColaborador(null);
+    inputRef.current?.focus();
+  }
+
+  // ─── Ação por status ───────────────────────────────────────
+  function renderActions(epi: EpiSubitem) {
+    if (PODE_ENTREGAR.includes(epi.status)) {
+      return (
+        <ActionBtn
+          label="Confirmar Entrega"
+          icon={<Check size={13} />}
+          color="#00E5FF"
+          border="rgba(0,229,255,0.35)"
+          bg="rgba(0,229,255,0.10)"
+          onClick={() => navigate('/entrega', { state: { epi } })}
+        />
+      );
+    }
+    if (PODE_DEVOLVER.includes(epi.status)) {
+      return (
+        <div style={{ display: 'flex', gap: 6 }}>
+          <ActionBtn
+            label="Devolver"
+            icon={<RotateCcw size={13} />}
+            color="#00E676"
+            border="rgba(0,230,118,0.35)"
+            bg="rgba(0,230,118,0.10)"
+            onClick={() => navigate('/devolucao', { state: { epi } })}
+          />
+          <ActionBtn
+            label="Trocar"
+            icon={<Repeat2 size={13} />}
+            color="#F59E0B"
+            border="rgba(245,158,11,0.35)"
+            bg="rgba(245,158,11,0.10)"
+            onClick={() => navigate('/troca', { state: { epi } })}
+          />
+        </div>
+      );
+    }
+    return null;
+  }
+
+  const serverError = error ? extractErrorMessage(error) : null;
+
+  return (
+    <div className="page-slide-up" style={{ maxWidth: 820, margin: '0 auto' }}>
+
+      {/* ── Search bar ── */}
+      <div style={{ marginBottom: 28 }}>
+        <label
+          htmlFor="cpf-input"
+          style={{
+            display: 'block',
+            fontSize: 11,
+            fontWeight: 700,
+            letterSpacing: '1px',
+            textTransform: 'uppercase',
+            color: '#4B5563',
+            marginBottom: 8,
+          }}
+        >
+          CPF do Colaborador
+        </label>
+
+        <div style={{ display: 'flex', gap: 10 }}>
+          {/* Input wrapper */}
           <div
             style={{
               flex: 1,
               display: 'flex',
               alignItems: 'center',
               gap: 10,
-              background: 'rgba(255,255,255,0.05)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              borderRadius: 8,
-              padding: '10px 14px',
+              background: 'rgba(255,255,255,0.04)',
+              border: `1px solid ${inputError ? 'rgba(239,68,68,0.50)' : 'rgba(255,255,255,0.10)'}`,
+              borderRadius: 10,
+              padding: '0 14px',
+              transition: 'border-color 0.15s',
+            }}
+            onFocusCapture={(e) => {
+              if (!inputError)
+                (e.currentTarget as HTMLElement).style.borderColor =
+                  'rgba(0,229,255,0.45)';
+            }}
+            onBlurCapture={(e) => {
+              if (!inputError)
+                (e.currentTarget as HTMLElement).style.borderColor =
+                  'rgba(255,255,255,0.10)';
             }}
           >
-            <Search size={15} color="#6B7280" />
+            <Search size={16} color="#4B5563" style={{ flexShrink: 0 }} />
             <input
+              id="cpf-input"
+              ref={inputRef}
               type="text"
-              value={searchMode === 'cpf' ? cpf : nome}
-              onChange={e => { 
-                if (searchMode === 'cpf') setCpf(formatCpf(e.target.value)); 
-                else setNome(e.target.value);
-                setError(''); setResult(null); setResults([]);
-              }}
-              onKeyDown={e => { if (e.key === 'Enter') handleSearch(); }}
-              placeholder={searchMode === 'cpf' ? "000.000.000-00" : "Nome do colaborador"}
+              inputMode="numeric"
+              placeholder="000.000.000-00"
+              maxLength={14}
+              value={cpfDisplay}
+              onChange={handleCpfChange}
+              onKeyDown={handleKeyDown}
+              autoFocus
               style={{
                 flex: 1,
                 background: 'none',
                 border: 'none',
-                outline: 'none',
                 color: '#F3F4F6',
-                fontSize: 15,
-                letterSpacing: searchMode === 'cpf' ? 1 : 0,
-                fontFamily: 'Inter, sans-serif',
+                fontSize: 16,
+                fontWeight: 500,
+                letterSpacing: '0.5px',
+                padding: '14px 0',
+                fontFamily: 'inherit',
               }}
             />
-            {((searchMode === 'cpf' && cpf) || (searchMode === 'nome' && nome)) && (
-              <button onClick={() => { if(searchMode === 'cpf') setCpf(''); else setNome(''); setResult(null); setResults([]); setError(''); }}>
-                <X size={14} color="#6B7280" />
+            {cpfDisplay && (
+              <button
+                onClick={handleClear}
+                title="Limpar"
+                style={{
+                  color: '#4B5563',
+                  fontSize: 18,
+                  lineHeight: 1,
+                  padding: 4,
+                  borderRadius: 4,
+                  transition: 'color 0.15s',
+                }}
+                onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.color = '#EF4444')}
+                onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.color = '#4B5563')}
+              >
+                ×
               </button>
             )}
           </div>
 
+          {/* Buscar button */}
           <button
-            onClick={() => handleSearch()}
-            disabled={loading}
+            onClick={handleSearch}
+            disabled={isLoading || isFetching}
             style={{
-              padding: '10px 20px',
-              borderRadius: 8,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '0 22px',
+              borderRadius: 10,
               background: 'linear-gradient(135deg, rgba(0,229,255,0.18), rgba(0,229,255,0.08))',
               border: '1px solid rgba(0,229,255,0.35)',
               color: '#00E5FF',
-              fontSize: 13,
-              fontWeight: 500,
-              cursor: loading ? 'not-allowed' : 'pointer',
-              opacity: loading ? 0.6 : 1,
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: isLoading ? 'not-allowed' : 'pointer',
+              opacity: isLoading ? 0.6 : 1,
+              transition: 'box-shadow 0.2s',
+              whiteSpace: 'nowrap',
+            }}
+            onMouseEnter={(e) => {
+              if (!isLoading)
+                (e.currentTarget as HTMLElement).style.boxShadow =
+                  '0 0 22px rgba(0,229,255,0.28)';
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLElement).style.boxShadow = 'none';
+            }}
+          >
+            {isLoading || isFetching ? (
+              <Loader2 size={16} className="spin" />
+            ) : (
+              <Search size={16} />
+            )}
+            Buscar
+          </button>
+        </div>
+
+        {/* Mensagem de erro de input */}
+        {inputError && (
+          <p
+            style={{
+              marginTop: 8,
+              fontSize: 12,
+              color: '#EF4444',
               display: 'flex',
               alignItems: 'center',
               gap: 6,
             }}
           >
-            {loading ? (
-              <span className="animate-spin" style={{ width: 14, height: 14, border: '2px solid #00E5FF', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block' }} />
-            ) : (
-              <Search size={14} />
-            )}
-            Buscar
-          </button>
-
-          {searchMode === 'cpf' && (
-            <button
-              onClick={() => setQrActive(v => !v)}
-              style={{
-                padding: '10px 14px',
-                borderRadius: 8,
-                background: qrActive ? 'rgba(0,229,255,0.15)' : 'rgba(255,255,255,0.05)',
-                border: qrActive ? '1px solid rgba(0,229,255,0.30)' : '1px solid rgba(255,255,255,0.08)',
-                color: qrActive ? '#00E5FF' : '#6B7280',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <QrCode size={16} />
-            </button>
-          )}
-        </div>
-
-        {/* QR reader */}
-        {qrActive && (
-          <div style={{ marginBottom: 12 }}>
-            <div
-              id="qr-reader"
-              ref={qrRef}
-              style={{ borderRadius: 10, overflow: 'hidden', border: '1px solid rgba(0,229,255,0.20)' }}
-            />
-            <button
-              onClick={stopScanner}
-              style={{
-                marginTop: 8,
-                padding: '6px 14px',
-                borderRadius: 8,
-                background: 'rgba(239,68,68,0.10)',
-                border: '1px solid rgba(239,68,68,0.25)',
-                color: '#EF4444',
-                fontSize: 12,
-                cursor: 'pointer',
-              }}
-            >
-              Fechar câmera
-            </button>
-          </div>
-        )}
-
-        {/* Erro */}
-        {error && (
-          <div
-            style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              padding: '10px 14px', borderRadius: 8,
-              background: 'rgba(239,68,68,0.10)',
-              border: '1px solid rgba(239,68,68,0.25)',
-              color: '#EF4444', fontSize: 13,
-            }}
-          >
-            <AlertCircle size={13} />
-            {error}
-          </div>
+            <AlertCircle size={12} /> {inputError}
+          </p>
         )}
       </div>
 
-      {/* Histórico */}
-      {history.length > 0 && !result && results.length === 0 && searchMode === 'cpf' && (
+      {/* ── Erro do servidor ── */}
+      {serverError && (
         <div
           style={{
-            background: 'rgba(36,40,45,0.85)',
-            backdropFilter: 'blur(12px)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: 14,
-            padding: 20,
-            marginBottom: 16,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            padding: '12px 16px',
+            borderRadius: 10,
+            background: 'rgba(239,68,68,0.10)',
+            border: '1px solid rgba(239,68,68,0.30)',
+            color: '#FCA5A5',
+            fontSize: 13,
+            marginBottom: 24,
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
-            <Clock size={13} color="#6B7280" />
-            <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 500 }}>Buscas recentes</span>
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {history.map(h => (
-              <button
-                key={h}
-                onClick={() => { setCpf(h); handleSearch(h.replace(/\D/g, '')); }}
-                style={{
-                  padding: '5px 12px',
-                  borderRadius: 20,
-                  background: 'rgba(255,255,255,0.05)',
-                  border: '1px solid rgba(255,255,255,0.08)',
-                  color: '#9CA3AF',
-                  fontSize: 12,
-                  cursor: 'pointer',
-                  fontVariantNumeric: 'tabular-nums',
-                }}
-              >
-                {h}
-              </button>
-            ))}
-          </div>
+          <AlertCircle size={16} color="#EF4444" style={{ flexShrink: 0 }} />
+          {serverError}
         </div>
       )}
 
-      {/* Recentes */}
-      {recentes.length > 0 && !result && results.length === 0 && (
-        <div
-          style={{
-            background: 'rgba(36,40,45,0.85)',
-            backdropFilter: 'blur(12px)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: 14,
-            padding: 20,
-            marginBottom: 16,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
-            <Clock size={13} color="#6B7280" />
-            <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 500 }}>Adicionados recentemente</span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {recentes.map((r, i) => (
-              <div
-                key={i}
-                onClick={() => iniciarConferencia(undefined, r)}
-                style={{
-                  padding: '12px 16px',
-                  borderRadius: 10,
-                  background: 'rgba(255,255,255,0.03)',
-                  border: '1px solid rgba(255,255,255,0.06)',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  transition: 'background 0.2s',
-                }}
-                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.08)'; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.03)'; }}
-              >
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 500, color: '#F3F4F6' }}>{r.nome}</div>
-                  <div style={{ fontSize: 11, color: '#6B7280' }}>CPF: {r.cpf || 'Não informado'}</div>
-                </div>
-                <ArrowRight size={14} color="#6B7280" />
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* ── Resultado ── */}
+      {isSuccess && data && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-      {/* Resultados de Busca por Nome */}
-      {results.length > 0 && !result && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ fontSize: 13, color: '#9CA3AF', marginBottom: 4 }}>
-            {results.length} encontrado(s). Selecione o colaborador:
-          </div>
-          {results.map((r, i) => (
-            <div
-              key={i}
-              onClick={() => selecionarResultado(r)}
-              style={{
-                background: 'rgba(36,40,45,0.85)',
-                backdropFilter: 'blur(12px)',
-                border: '1px solid rgba(255,255,255,0.08)',
-                borderRadius: 14,
-                padding: 16,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 14,
-                transition: 'background 0.2s',
-              }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.1)'; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(36,40,45,0.85)'; }}
-            >
-              <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(0,229,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <User size={16} color="#00E5FF" />
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 14, fontWeight: 600, color: '#F3F4F6', marginBottom: 2 }}>{r.nome}</div>
-                <div style={{ fontSize: 12, color: '#6B7280' }}>CPF: {r.cpf || 'Não informado'}</div>
-              </div>
-              <ArrowRight size={16} color="#6B7280" />
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Resultado */}
-      {result && (
-        <div
-          className="toast-slide-in"
-          style={{
-            background: 'rgba(36,40,45,0.85)',
-            backdropFilter: 'blur(12px)',
-            border: '1px solid rgba(0,230,118,0.25)',
-            borderRadius: 14,
-            padding: 24,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
+          {/* Card do colaborador */}
+          <div
+            style={{
+              background: 'rgba(36,40,45,0.90)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: 16,
+              padding: '18px 22px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 16,
+            }}
+          >
             <div
               style={{
-                width: 48,
-                height: 48,
+                width: 44,
+                height: 44,
                 borderRadius: '50%',
-                background: 'linear-gradient(135deg, rgba(0,229,255,0.15), rgba(0,230,118,0.15))',
-                border: '1px solid rgba(0,229,255,0.25)',
+                background: 'linear-gradient(135deg, #00E5FF, #00E676)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
+                fontSize: 17,
+                fontWeight: 700,
+                color: '#0A0D0F',
+                flexShrink: 0,
               }}
             >
-              <User size={20} color="#00E5FF" />
+              {data.nome.charAt(0).toUpperCase()}
             </div>
-            <div>
-              <div style={{ fontSize: 16, fontWeight: 600, color: '#F3F4F6', marginBottom: 2 }}>{result.nome}</div>
-              <div style={{ fontSize: 12, color: '#6B7280', fontVariantNumeric: 'tabular-nums' }}>CPF: {result.cpf}</div>
-            </div>
-          </div>
-
-          <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.8px', textTransform: 'uppercase', color: '#4B5563', marginBottom: 10 }}>
-              EPIs a devolver ({result.epis_esperados.length})
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {result.epis_esperados.map((epi, i) => (
-                <div
-                  key={i}
+            <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <h2
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10,
-                    padding: '8px 12px',
-                    borderRadius: 8,
-                    background: 'rgba(0,229,255,0.04)',
-                    border: '1px solid rgba(0,229,255,0.08)',
+                    fontSize: 17,
+                    fontWeight: 700,
+                    color: '#F3F4F6',
+                    letterSpacing: '-0.2px',
                   }}
                 >
-                  <span style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(0,229,255,0.10)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700, color: '#00E5FF', flexShrink: 0 }}>
-                    {i + 1}
-                  </span>
-                  <span style={{ fontSize: 12, color: '#F3F4F6' }}>{epi}</span>
-                </div>
-              ))}
+                  {data.nome}
+                </h2>
+                <User size={14} color="#4B5563" />
+              </div>
+              <div style={{ display: 'flex', gap: 16, marginTop: 4 }}>
+                <InfoChip label="CPF" value={cpfDisplay} />
+                {data.contrato && <InfoChip label="Contrato" value={data.contrato} />}
+              </div>
+            </div>
+            <div
+              style={{
+                padding: '5px 12px',
+                borderRadius: 20,
+                background: 'rgba(0,229,255,0.08)',
+                border: '1px solid rgba(0,229,255,0.20)',
+                fontSize: 11,
+                fontWeight: 600,
+                color: '#00E5FF',
+                letterSpacing: '0.4px',
+              }}
+            >
+              {data.subitens.length} EPI{data.subitens.length !== 1 ? 's' : ''}
             </div>
           </div>
 
-          <button
-            onClick={() => iniciarConferencia(result)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '13px', borderRadius: 10,
-              background: result.is_retorno
-                ? 'linear-gradient(135deg, rgba(245,158,11,0.15), rgba(245,158,11,0.08))'
-                : 'linear-gradient(135deg, rgba(0,230,118,0.15), rgba(0,230,118,0.08))',
-              border: result.is_retorno ? '1px solid rgba(245,158,11,0.30)' : '1px solid rgba(0,230,118,0.30)',
-              color: result.is_retorno ? '#F59E0B' : '#00E676',
-              fontSize: 14, fontWeight: 600, cursor: 'pointer', justifyContent: 'center', transition: 'box-shadow 0.2s ease',
-            }}
-          >
-            {result.is_retorno ? '⏳ Registrar Devolutiva de Pendências' : 'Iniciar Conferência de EPIs'}
-            <ArrowRight size={16} />
-          </button>
+          {/* Lista de EPIs */}
+          {data.subitens.length === 0 ? (
+            <div
+              style={{
+                padding: '32px 0',
+                textAlign: 'center',
+                color: '#4B5563',
+                fontSize: 13,
+                border: '1px dashed rgba(255,255,255,0.06)',
+                borderRadius: 12,
+              }}
+            >
+              <Package size={28} color="#374151" style={{ marginBottom: 8 }} />
+              <p>Nenhum EPI vinculado a este colaborador.</p>
+            </div>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '0 6px' }}>
+              <thead>
+                <tr>
+                  {['EPI', 'Tamanho', 'Status', 'Ação'].map((h) => (
+                    <th
+                      key={h}
+                      style={{
+                        textAlign: h === 'Ação' ? 'right' : 'left',
+                        fontSize: 10,
+                        fontWeight: 700,
+                        letterSpacing: '1px',
+                        textTransform: 'uppercase',
+                        color: '#374151',
+                        paddingBottom: 8,
+                        paddingLeft: h === 'EPI' ? 16 : 0,
+                        paddingRight: h === 'Ação' ? 16 : 0,
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data.subitens.map((epi) => (
+                  <tr key={epi.id}>
+                    <td
+                      style={{
+                        padding: '12px 0 12px 16px',
+                        borderRadius: '10px 0 0 10px',
+                        background: 'rgba(255,255,255,0.03)',
+                        borderTop: '1px solid rgba(255,255,255,0.05)',
+                        borderBottom: '1px solid rgba(255,255,255,0.05)',
+                        borderLeft: '1px solid rgba(255,255,255,0.05)',
+                        maxWidth: 260,
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 500,
+                          color: '#E5E7EB',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          display: 'block',
+                        }}
+                      >
+                        {epi.nome}
+                      </span>
+                      {epi.ca && (
+                        <span style={{ fontSize: 10, color: '#4B5563' }}>CA {epi.ca}</span>
+                      )}
+                    </td>
+                    <td
+                      style={{
+                        padding: '12px 12px',
+                        background: 'rgba(255,255,255,0.03)',
+                        borderTop: '1px solid rgba(255,255,255,0.05)',
+                        borderBottom: '1px solid rgba(255,255,255,0.05)',
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontFamily: 'monospace',
+                          fontSize: 13,
+                          fontWeight: 600,
+                          color: '#9CA3AF',
+                          background: 'rgba(255,255,255,0.05)',
+                          padding: '2px 8px',
+                          borderRadius: 6,
+                        }}
+                      >
+                        {epi.tamanho || 'U'}
+                      </span>
+                    </td>
+                    <td
+                      style={{
+                        padding: '12px 12px',
+                        background: 'rgba(255,255,255,0.03)',
+                        borderTop: '1px solid rgba(255,255,255,0.05)',
+                        borderBottom: '1px solid rgba(255,255,255,0.05)',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      <StatusBadge status={epi.status} />
+                    </td>
+                    <td
+                      style={{
+                        padding: '12px 16px 12px 12px',
+                        borderRadius: '0 10px 10px 0',
+                        background: 'rgba(255,255,255,0.03)',
+                        borderTop: '1px solid rgba(255,255,255,0.05)',
+                        borderBottom: '1px solid rgba(255,255,255,0.05)',
+                        borderRight: '1px solid rgba(255,255,255,0.05)',
+                        textAlign: 'right',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {renderActions(epi)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {/* Estado inicial — sem busca ativa */}
+      {!cpfSearch && !isLoading && (
+        <div
+          style={{
+            textAlign: 'center',
+            padding: '60px 0',
+            color: '#374151',
+          }}
+        >
+          <Search size={36} color="#1F2937" style={{ marginBottom: 12 }} />
+          <p style={{ fontSize: 14, color: '#4B5563' }}>
+            Digite o CPF para localizar o colaborador.
+          </p>
+          <p style={{ fontSize: 12, color: '#374151', marginTop: 4 }}>
+            Você também pode bipar o crachá diretamente no campo acima.
+          </p>
         </div>
       )}
     </div>
+  );
+}
+
+// ─── Sub-componentes internos ───────────────────────────────
+
+function InfoChip({ label, value }: { label: string; value: string }) {
+  return (
+    <span style={{ fontSize: 12, color: '#6B7280' }}>
+      {label}:{' '}
+      <span style={{ color: '#9CA3AF', fontWeight: 500 }}>{value}</span>
+    </span>
+  );
+}
+
+function ActionBtn({
+  label,
+  icon,
+  color,
+  border,
+  bg,
+  onClick,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  color: string;
+  border: string;
+  bg: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '6px 12px',
+        borderRadius: 8,
+        background: bg,
+        border: `1px solid ${border}`,
+        color,
+        fontSize: 12,
+        fontWeight: 600,
+        cursor: 'pointer',
+        transition: 'all 0.15s',
+        whiteSpace: 'nowrap',
+      }}
+      onMouseEnter={(e) => {
+        (e.currentTarget as HTMLElement).style.boxShadow = `0 0 14px ${border}`;
+      }}
+      onMouseLeave={(e) => {
+        (e.currentTarget as HTMLElement).style.boxShadow = 'none';
+      }}
+    >
+      {icon}
+      {label}
+      <ChevronRight size={11} />
+    </button>
   );
 }

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Skill(gsd-secure-phase)",
+      "Bash(npx tsc *)",
+      "Bash(npx vite *)"
+    ]
+  }
+}
